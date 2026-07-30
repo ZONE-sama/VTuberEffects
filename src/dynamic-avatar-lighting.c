@@ -24,6 +24,7 @@
 #define S_AMBIENT_AMOUNT "ambient_amount"
 #define S_AMBIENT_BLUR "ambient_blur"
 #define S_EXPOSURE_ENABLED "exposure_enabled"
+#define S_EXPOSURE_AFFECTS_RIM "exposure_affects_rim"
 #define S_EXPOSURE_TARGET "exposure_target"
 #define S_EXPOSURE_STRENGTH "exposure_strength"
 #define S_EXPOSURE_MIN "exposure_min"
@@ -123,6 +124,7 @@ struct dal_filter {
 	gs_eparam_t *p_ambient_base;
 	gs_eparam_t *p_ambient_amount;
 	gs_eparam_t *p_exposure_enabled;
+	gs_eparam_t *p_exposure_affects_rim;
 	gs_eparam_t *p_exposure_target;
 	gs_eparam_t *p_exposure_strength;
 	gs_eparam_t *p_exposure_min;
@@ -171,6 +173,7 @@ struct dal_filter {
 	float ambient_amount;
 	float ambient_blur;
 	bool exposure_enabled;
+	bool exposure_affects_rim;
 	float exposure_target;
 	float exposure_strength;
 	float exposure_min;
@@ -272,6 +275,9 @@ static void load_effect(struct dal_filter *filter)
 	filter->p_exposure_enabled =
 		gs_effect_get_param_by_name(filter->effect,
 					    "exposure_enabled");
+	filter->p_exposure_affects_rim =
+		gs_effect_get_param_by_name(filter->effect,
+					    "exposure_affects_rim");
 	filter->p_exposure_target =
 		gs_effect_get_param_by_name(filter->effect,
 					    "exposure_target");
@@ -450,6 +456,8 @@ static void dal_update(void *data, obs_data_t *settings)
 	filter->ambient_blur = (float)obs_data_get_double(settings, S_AMBIENT_BLUR);
 	filter->exposure_enabled =
 		obs_data_get_bool(settings, S_EXPOSURE_ENABLED);
+	filter->exposure_affects_rim =
+		obs_data_get_bool(settings, S_EXPOSURE_AFFECTS_RIM);
 	filter->exposure_target =
 		(float)obs_data_get_double(settings, S_EXPOSURE_TARGET);
 	filter->exposure_strength =
@@ -563,6 +571,7 @@ static void dal_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, S_AMBIENT_AMOUNT, 2.00);
 	obs_data_set_default_double(settings, S_AMBIENT_BLUR, 330.0);
 	obs_data_set_default_bool(settings, S_EXPOSURE_ENABLED, false);
+	obs_data_set_default_bool(settings, S_EXPOSURE_AFFECTS_RIM, true);
 	obs_data_set_default_double(settings, S_EXPOSURE_TARGET, 0.45);
 	obs_data_set_default_double(settings, S_EXPOSURE_STRENGTH, 1.00);
 	obs_data_set_default_double(settings, S_EXPOSURE_MIN, 0.35);
@@ -701,6 +710,11 @@ static void copy_effect_settings(obs_data_t *destination,
 			    obs_data_get_double(source, S_AMBIENT_BLUR));
 	obs_data_set_bool(destination, S_EXPOSURE_ENABLED,
 			  obs_data_get_bool(source, S_EXPOSURE_ENABLED));
+	obs_data_set_bool(
+		destination, S_EXPOSURE_AFFECTS_RIM,
+		obs_data_has_user_value(source, S_EXPOSURE_AFFECTS_RIM)
+			? obs_data_get_bool(source, S_EXPOSURE_AFFECTS_RIM)
+			: true);
 	obs_data_set_double(destination, S_EXPOSURE_TARGET,
 			    obs_data_has_user_value(source, S_EXPOSURE_TARGET)
 				    ? obs_data_get_double(source,
@@ -953,6 +967,7 @@ static bool reset_environment_processing_clicked(
 	UNUSED_PARAMETER(property);
 	obs_data_t *settings = obs_data_create();
 	obs_data_set_bool(settings, S_EXPOSURE_ENABLED, false);
+	obs_data_set_bool(settings, S_EXPOSURE_AFFECTS_RIM, true);
 	obs_data_set_double(settings, S_EXPOSURE_TARGET, 0.45);
 	obs_data_set_double(settings, S_EXPOSURE_STRENGTH, 1.00);
 	obs_data_set_double(settings, S_EXPOSURE_MIN, 0.35);
@@ -1163,6 +1178,9 @@ static obs_properties_t *dal_properties(void *data)
 	obs_properties_add_bool(
 		environment_processing, S_EXPOSURE_ENABLED,
 		obs_module_text("Processing.ExposureEnabled"));
+	obs_properties_add_bool(
+		environment_processing, S_EXPOSURE_AFFECTS_RIM,
+		obs_module_text("Processing.ExposureAffectsRim"));
 	obs_properties_add_float_slider(
 		environment_processing, S_EXPOSURE_TARGET,
 		obs_module_text("Processing.ExposureTarget"), 0.10, 1.50,
@@ -1195,6 +1213,10 @@ static obs_properties_t *dal_properties(void *data)
 		obs_properties_get(environment_processing,
 				   S_EXPOSURE_ENABLED),
 		"Processing.ExposureEnabled.Tooltip");
+	set_tooltip(
+		obs_properties_get(environment_processing,
+				   S_EXPOSURE_AFFECTS_RIM),
+		"Processing.ExposureAffectsRim.Tooltip");
 	set_tooltip(
 		obs_properties_get(environment_processing,
 				   S_EXPOSURE_TARGET),
@@ -1650,6 +1672,8 @@ static void dal_render(void *data, gs_effect_t *unused)
 	gs_effect_set_float(filter->p_ambient_amount, filter->ambient_amount);
 	gs_effect_set_bool(filter->p_exposure_enabled,
 			   filter->exposure_enabled);
+	gs_effect_set_bool(filter->p_exposure_affects_rim,
+			   filter->exposure_affects_rim);
 	gs_effect_set_float(filter->p_exposure_target,
 			    filter->exposure_target);
 	gs_effect_set_float(filter->p_exposure_strength,

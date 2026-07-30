@@ -25,7 +25,12 @@ VertData VSDefault(VertData v_in)
 float4 alpha_weighted_environment_sample(float2 uv)
 {
 	float4 source = image.Sample(linear_clamp, uv);
-	return float4(source.rgb * source.a, source.a);
+	/*
+	 * OBS renders source textures with premultiplied alpha. Preserve that
+	 * premultiplied RGB and carry alpha as the sample weight. Multiplying RGB
+	 * by alpha again would darken partially transparent edge pixels.
+	 */
+	return source;
 }
 
 float4 PSDownsampleAlphaWeighted(VertData v_in) : TARGET

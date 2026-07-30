@@ -9,6 +9,7 @@ uniform bool ambient_enabled;
 uniform float ambient_base;
 uniform float ambient_amount;
 uniform bool exposure_enabled;
+uniform bool exposure_affects_rim;
 uniform float exposure_target;
 uniform float exposure_strength;
 uniform float exposure_min;
@@ -197,7 +198,7 @@ float emissive_match(float3 source_rgb)
 	return saturate(match);
 }
 
-float3 process_environment_color(float3 source_color)
+float3 process_environment_color(float3 source_color, bool apply_exposure)
 {
 	float3 color = max(source_color, float3(0.0, 0.0, 0.0));
 	float luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
@@ -216,7 +217,7 @@ float3 process_environment_color(float3 source_color)
 			    float3(0.5, 0.5, 0.5),
 		    float3(0.0, 0.0, 0.0));
 
-	if (exposure_enabled) {
+	if (exposure_enabled && apply_exposure) {
 		float measured =
 			max(dot(color, float3(0.2126, 0.7152, 0.0722)),
 			    0.0001);
@@ -357,13 +358,14 @@ float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 		environment_image.Sample(linear_clamp, v_in.uv);
 	float environment_weight = max(environment_sample.a, 0.0001);
 	float3 environment = process_environment_color(
-		environment_sample.rgb / environment_weight);
+		environment_sample.rgb / environment_weight, true);
 	float4 rim_environment_sample =
 		rim_environment_image.Sample(linear_clamp, v_in.uv);
 	float rim_environment_weight =
 		max(rim_environment_sample.a, 0.0001);
 	float3 rim_environment = process_environment_color(
-		rim_environment_sample.rgb / rim_environment_weight);
+		rim_environment_sample.rgb / rim_environment_weight,
+		exposure_affects_rim);
 	float3 ambient_multiplier =
 		float3(ambient_base, ambient_base, ambient_base) +
 		environment * ambient_amount;
