@@ -50,14 +50,3 @@ install(
   FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.txt"
   DESTINATION "${CMAKE_PROJECT_NAME}"
 )
-
-add_custom_command(
-  TARGET ${CMAKE_PROJECT_NAME}
-  POST_BUILD
-  COMMAND
-    "${CMAKE_COMMAND}" -E copy_if_different
-    "${CMAKE_CURRENT_SOURCE_DIR}/README.txt"
-    "${CMAKE_CURRENT_BINARY_DIR}/rundir/$<CONFIG>/${CMAKE_PROJECT_NAME}/README.txt"
-  COMMENT "Copy VTuber Effects readme to rundir"
-  VERBATIM
-)
