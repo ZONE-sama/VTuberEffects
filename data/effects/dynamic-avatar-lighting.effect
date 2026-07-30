@@ -390,11 +390,19 @@ float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 		} else if (rim_blend_mode == 2) {
 			lit_result = lerp(ambient_result, rim_color, rim_mix);
 		} else if (rim_blend_mode == 3) {
+			/*
+			 * Above 1.0, rim brightness also amplifies the
+			 * environment-lit duplicate. This allows a zero minimum
+			 * brightness to disappear over black without preventing
+			 * bright environments from producing a strong rim.
+			 */
+			float rim_light_gain = max(rim_amount, 1.0);
 			float3 duplicate_layer =
 				original.rgb *
 				(float3(rim_layer_base, rim_layer_base,
 					rim_layer_base) +
-				 rim_environment * rim_color_amount);
+				 rim_environment * rim_color_amount *
+					 rim_light_gain);
 			lit_result = lerp(ambient_result, duplicate_layer, rim_mix);
 		} else {
 			lit_result = ambient_result + rim_color * rim_amount * rim_mask;
