@@ -197,9 +197,10 @@ float emissive_match(float3 source_rgb)
 
 float3 process_environment_color(float3 source_color)
 {
-	float3 color = max(source_color, 0.0);
+	float3 color = max(source_color, float3(0.0, 0.0, 0.0));
 	float luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
-	color = lerp(luminance.xxx, color, color_saturation);
+	color = lerp(float3(luminance, luminance, luminance), color,
+		     color_saturation);
 
 	float maximum = max(color.r, max(color.g, color.b));
 	float minimum = min(color.r, min(color.g, color.b));
@@ -207,8 +208,11 @@ float3 process_environment_color(float3 source_color)
 	float vibrance_scale =
 		max(0.0, 1.0 + color_vibrance * (1.0 - chroma));
 	luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
-	color = lerp(luminance.xxx, color, vibrance_scale);
-	color = max((color - 0.5) * color_contrast + 0.5, 0.0);
+	color = lerp(float3(luminance, luminance, luminance), color,
+		     vibrance_scale);
+	color = max((color - float3(0.5, 0.5, 0.5)) * color_contrast +
+			    float3(0.5, 0.5, 0.5),
+		    float3(0.0, 0.0, 0.0));
 
 	if (exposure_enabled) {
 		float measured =
@@ -229,18 +233,18 @@ float3 process_environment_color(float3 source_color)
 	if (maximum_channel > safe_limit)
 		color *= safe_limit / maximum_channel;
 
-	return max(color, 0.0);
+	return max(color, float3(0.0, 0.0, 0.0));
 }
 
 float4 emissive_bloom_sample(float2 center_uv)
 {
 	if (!bloom_enabled || !keys_enabled || bloom_radius <= 0.01 ||
 	    bloom_amount <= 0.001)
-		return 0.0;
+		return float4(0.0, 0.0, 0.0, 0.0);
 
 	const int sample_count = 48;
 	const float golden_angle = 2.39996323;
-	float3 color_sum = 0.0;
+	float3 color_sum = float3(0.0, 0.0, 0.0);
 	float mask_sum = 0.0;
 	float total_weight = 0.0;
 
@@ -334,7 +338,9 @@ float circular_blurred_alpha(float2 center_uv, float blur_width)
 float inner_rim(float2 uv, float center_alpha)
 {
 	float safe_scale = max(rim_scale, 0.001);
-	float2 center_uv = (uv - 0.5) / safe_scale + 0.5;
+	float2 center_uv =
+		(uv - float2(0.5, 0.5)) / safe_scale +
+		float2(0.5, 0.5);
 	center_uv += texel_size * rim_offset;
 	float alpha_blur =
 		circular_blurred_alpha(center_uv, rim_width);
@@ -348,7 +354,9 @@ float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 	float4 original = image.Sample(linear_clamp, v_in.uv);
 	float3 environment = process_environment_color(
 		environment_image.Sample(linear_clamp, v_in.uv).rgb);
-	float3 ambient_multiplier = ambient_base.xxx + environment * ambient_amount;
+	float3 ambient_multiplier =
+		float3(ambient_base, ambient_base, ambient_base) +
+		environment * ambient_amount;
 	float3 ambient_result = ambient_enabled
 		? original.rgb * ambient_multiplier
 		: original.rgb;
@@ -360,14 +368,20 @@ float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 	if (rim_enabled) {
 		if (rim_blend_mode == 1) {
 			float3 screen_layer = saturate(rim_color * rim_mix);
-			lit_result = 1.0 - (1.0 - saturate(ambient_result)) *
-				     (1.0 - screen_layer);
+			lit_result =
+				float3(1.0, 1.0, 1.0) -
+				(float3(1.0, 1.0, 1.0) -
+				 saturate(ambient_result)) *
+					(float3(1.0, 1.0, 1.0) -
+					 screen_layer);
 		} else if (rim_blend_mode == 2) {
 			lit_result = lerp(ambient_result, rim_color, rim_mix);
 		} else if (rim_blend_mode == 3) {
 			float3 duplicate_layer =
-				original.rgb * (rim_layer_base +
-						environment * rim_color_amount);
+				original.rgb *
+				(float3(rim_layer_base, rim_layer_base,
+					rim_layer_base) +
+				 environment * rim_color_amount);
 			lit_result = lerp(ambient_result, duplicate_layer, rim_mix);
 		} else {
 			lit_result = ambient_result + rim_color * rim_amount * rim_mask;
@@ -390,7 +404,7 @@ float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 			       shadow_opacity * (1.0 - original.a);
 	}
 
-	float3 glow_rgb = 0.0;
+	float3 glow_rgb = float3(0.0, 0.0, 0.0);
 	float glow_alpha = 0.0;
 	if (glow_enabled) {
 		float glow_mask =
@@ -405,10 +419,12 @@ float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 
 		if (glow_blend_mode == 1) {
 			/* Screen blend, encoded as premultiplied filter output. */
-			glow_rgb =
-				(background + (1.0 - background) *
-				 saturate(glow_light)) -
-				background * (1.0 - glow_alpha);
+				glow_rgb =
+					(background +
+					 (float3(1.0, 1.0, 1.0) -
+					  background) *
+						 saturate(glow_light)) -
+					background * (1.0 - glow_alpha);
 		} else if (glow_blend_mode == 2) {
 			/* Standard alpha blend. */
 			glow_rgb =
@@ -442,8 +458,8 @@ float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 	float3 final_premultiplied =
 		avatar_rgb * original.a + outer_rgb;
 	float3 final_rgb = final_alpha > 0.000001
-		? final_premultiplied / final_alpha
-		: 0.0;
+			? final_premultiplied / final_alpha
+			: float3(0.0, 0.0, 0.0);
 
 	if (debug_view == 1)
 		return float4(environment, 1.0);
@@ -452,7 +468,7 @@ float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 	if (debug_view == 3)
 		return float4((rim_color * rim_amount * rim_mask), original.a);
 	if (debug_view == 4)
-		return float4(emissive.xxx, original.a);
+		return float4(emissive, emissive, emissive, original.a);
 	if (debug_view == 5)
 		return original;
 	if (debug_view == 6)
