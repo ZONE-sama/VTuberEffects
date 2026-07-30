@@ -1,5 +1,5 @@
 VTUBER EFFECTS FOR OBS
-Version 0.15.2
+Version 0.15.7
 
 
 OVERVIEW
@@ -10,6 +10,8 @@ or source group without displaying recognizable details from that source.
 
 The filter also includes directional rim lighting, protected emissive colors,
 emissive bloom, a drop shadow, and an outer glow.
+
+This compatibility build targets OBS Studio 29.0.2 and later.
 
 
 INSTALLATION
@@ -410,11 +412,9 @@ Lower that color entry's tolerance or softness.
 Raise its minimum saturation or minimum brightness.
 
 
-VERSION 0.15.2
+VERSION 0.15.7
 
-Removed the older ambient brightness limiter controls. Automatic Exposure
-Compensation and Maximum Color Intensity now provide brightness management.
+Retargeted the Windows and macOS builds to the OBS Studio 29.0.2 SDK and its
+matching OBS dependency and Qt generation.
 
-Renamed Environment Processing to Automatic Exposure Compensation.
-
-Restored the README as a plain-text end-user manual.
+Lowered the universal macOS deployment target to macOS 11.0.
