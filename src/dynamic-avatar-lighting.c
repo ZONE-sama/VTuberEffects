@@ -37,6 +37,7 @@
 #define S_RIM_AMOUNT "rim_amount"
 #define S_RIM_COLOR_AMOUNT "rim_color_amount"
 #define S_RIM_LAYER_BASE "rim_layer_base"
+#define S_RIM_DARKNESS_CUTOFF "rim_darkness_cutoff"
 #define S_RIM_BLEND_MODE "rim_blend_mode"
 #define S_RIM_WIDTH "rim_width"
 #define S_RIM_SOFTNESS "rim_softness"
@@ -137,6 +138,7 @@ struct dal_filter {
 	gs_eparam_t *p_rim_amount;
 	gs_eparam_t *p_rim_color_amount;
 	gs_eparam_t *p_rim_layer_base;
+	gs_eparam_t *p_rim_darkness_cutoff;
 	gs_eparam_t *p_rim_blend_mode;
 	gs_eparam_t *p_rim_width;
 	gs_eparam_t *p_rim_softness;
@@ -186,6 +188,7 @@ struct dal_filter {
 	float rim_amount;
 	float rim_color_amount;
 	float rim_layer_base;
+	float rim_darkness_cutoff;
 	int rim_blend_mode;
 	float rim_width;
 	float rim_softness;
@@ -305,6 +308,9 @@ static void load_effect(struct dal_filter *filter)
 		gs_effect_get_param_by_name(filter->effect, "rim_color_amount");
 	filter->p_rim_layer_base =
 		gs_effect_get_param_by_name(filter->effect, "rim_layer_base");
+	filter->p_rim_darkness_cutoff =
+		gs_effect_get_param_by_name(filter->effect,
+					    "rim_darkness_cutoff");
 	filter->p_rim_blend_mode =
 		gs_effect_get_param_by_name(filter->effect, "rim_blend_mode");
 	filter->p_rim_width = gs_effect_get_param_by_name(filter->effect, "rim_width");
@@ -478,6 +484,8 @@ static void dal_update(void *data, obs_data_t *settings)
 	filter->rim_amount = (float)obs_data_get_double(settings, S_RIM_AMOUNT);
 	filter->rim_color_amount = (float)obs_data_get_double(settings, S_RIM_COLOR_AMOUNT);
 	filter->rim_layer_base = (float)obs_data_get_double(settings, S_RIM_LAYER_BASE);
+	filter->rim_darkness_cutoff =
+		(float)obs_data_get_double(settings, S_RIM_DARKNESS_CUTOFF);
 	filter->rim_blend_mode = (int)obs_data_get_int(settings, S_RIM_BLEND_MODE);
 	filter->rim_width = (float)obs_data_get_double(settings, S_RIM_WIDTH);
 	filter->rim_softness = (float)obs_data_get_double(settings, S_RIM_SOFTNESS);
@@ -584,6 +592,7 @@ static void dal_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, S_RIM_AMOUNT, 0.50);
 	obs_data_set_default_double(settings, S_RIM_COLOR_AMOUNT, 2.0);
 	obs_data_set_default_double(settings, S_RIM_LAYER_BASE, 1.0);
+	obs_data_set_default_double(settings, S_RIM_DARKNESS_CUTOFF, 0.15);
 	obs_data_set_default_int(settings, S_RIM_BLEND_MODE,
 				 RIM_BLEND_MASKED_DUPLICATE);
 	obs_data_set_default_double(settings, S_RIM_WIDTH, 25.0);
@@ -768,6 +777,11 @@ static void copy_effect_settings(obs_data_t *destination,
 			    obs_data_get_double(source, S_RIM_COLOR_AMOUNT));
 	obs_data_set_double(destination, S_RIM_LAYER_BASE,
 			    obs_data_get_double(source, S_RIM_LAYER_BASE));
+	obs_data_set_double(
+		destination, S_RIM_DARKNESS_CUTOFF,
+		obs_data_has_user_value(source, S_RIM_DARKNESS_CUTOFF)
+			? obs_data_get_double(source, S_RIM_DARKNESS_CUTOFF)
+			: 0.15);
 	obs_data_set_int(destination, S_RIM_BLEND_MODE,
 			 obs_data_get_int(source, S_RIM_BLEND_MODE));
 	obs_data_set_double(destination, S_RIM_WIDTH,
@@ -991,6 +1005,7 @@ static bool reset_rim_clicked(obs_properties_t *props,
 	obs_data_set_double(settings, S_RIM_AMOUNT, 0.50);
 	obs_data_set_double(settings, S_RIM_COLOR_AMOUNT, 2.00);
 	obs_data_set_double(settings, S_RIM_LAYER_BASE, 1.00);
+	obs_data_set_double(settings, S_RIM_DARKNESS_CUTOFF, 0.15);
 	obs_data_set_int(settings, S_RIM_BLEND_MODE,
 			 RIM_BLEND_MASKED_DUPLICATE);
 	obs_data_set_double(settings, S_RIM_WIDTH, 25.0);
@@ -1267,6 +1282,9 @@ static obs_properties_t *dal_properties(void *data)
 	obs_properties_add_float_slider(rim, S_RIM_LAYER_BASE,
 					obs_module_text("Rim.LayerBase"),
 					0.0, 3.0, 0.01);
+	obs_properties_add_float_slider(
+		rim, S_RIM_DARKNESS_CUTOFF,
+		obs_module_text("Rim.DarknessCutoff"), 0.0, 0.75, 0.01);
 	obs_property_t *rim_blend = obs_properties_add_list(
 		rim, S_RIM_BLEND_MODE, obs_module_text("Rim.BlendMode"),
 		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
@@ -1300,6 +1318,8 @@ static obs_properties_t *dal_properties(void *data)
 	set_tooltip(obs_properties_get(rim, S_RIM_AMOUNT), "Rim.Amount.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_COLOR_AMOUNT), "Rim.ColorAmount.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_LAYER_BASE), "Rim.LayerBase.Tooltip");
+	set_tooltip(obs_properties_get(rim, S_RIM_DARKNESS_CUTOFF),
+		    "Rim.DarknessCutoff.Tooltip");
 	set_tooltip(rim_blend, "Rim.BlendMode.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_WIDTH), "Rim.Width.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_SOFTNESS), "Rim.Softness.Tooltip");
@@ -1694,6 +1714,8 @@ static void dal_render(void *data, gs_effect_t *unused)
 	gs_effect_set_float(filter->p_rim_amount, filter->rim_amount);
 	gs_effect_set_float(filter->p_rim_color_amount, filter->rim_color_amount);
 	gs_effect_set_float(filter->p_rim_layer_base, filter->rim_layer_base);
+	gs_effect_set_float(filter->p_rim_darkness_cutoff,
+			    filter->rim_darkness_cutoff);
 	gs_effect_set_int(filter->p_rim_blend_mode, filter->rim_blend_mode);
 	gs_effect_set_float(filter->p_rim_width, filter->rim_width);
 	gs_effect_set_float(filter->p_rim_softness, filter->rim_softness);

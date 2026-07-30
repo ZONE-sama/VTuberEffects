@@ -22,6 +22,7 @@ uniform bool rim_enabled;
 uniform float rim_amount;
 uniform float rim_color_amount;
 uniform float rim_layer_base;
+uniform float rim_darkness_cutoff;
 uniform int rim_blend_mode;
 uniform float rim_width;
 uniform float rim_softness;
@@ -366,6 +367,17 @@ float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 	float3 rim_environment = process_environment_color(
 		rim_environment_sample.rgb / rim_environment_weight,
 		exposure_affects_rim);
+	float rim_environment_luminance =
+		dot(rim_environment, float3(0.2126, 0.7152, 0.0722));
+	float safe_rim_luminance =
+		max(rim_environment_luminance, 0.0001);
+	float safe_rim_cutoff =
+		min(saturate(rim_darkness_cutoff), 0.999);
+	float remapped_rim_luminance =
+		saturate((rim_environment_luminance - safe_rim_cutoff) /
+			 max(1.0 - safe_rim_cutoff, 0.001));
+	rim_environment *=
+		remapped_rim_luminance / safe_rim_luminance;
 	float3 ambient_multiplier =
 		float3(ambient_base, ambient_base, ambient_base) +
 		environment * ambient_amount;
