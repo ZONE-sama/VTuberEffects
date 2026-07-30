@@ -246,8 +246,8 @@ float4 emissive_bloom_sample(float2 center_uv)
 
 	for (int i = 0; i < sample_count; i++) {
 		float normalized_radius =
-			sqrt(((float)i + 0.5) / (float)sample_count);
-		float angle = (float)i * golden_angle;
+			sqrt((float(i) + 0.5) / float(sample_count));
+		float angle = float(i) * golden_angle;
 		float2 direction = float2(cos(angle), sin(angle));
 		float weight =
 			exp(-3.25 * normalized_radius * normalized_radius);
@@ -262,8 +262,9 @@ float4 emissive_bloom_sample(float2 center_uv)
 	}
 
 	float bloom_mask = mask_sum / max(total_weight, 0.000001);
-	float3 bloom_color =
-		mask_sum > 0.000001 ? color_sum / mask_sum : 0.0;
+	float3 bloom_color = mask_sum > 0.000001
+				     ? color_sum / mask_sum
+				     : float3(0.0, 0.0, 0.0);
 	return float4(bloom_color, saturate(bloom_mask));
 }
 
@@ -291,7 +292,8 @@ float blurred_alpha(float2 center_uv, float blur_width)
 		float weight_y = gaussian_weight(y);
 		for (int x = -4; x <= 4; x++) {
 			float weight = gaussian_weight(x) * weight_y;
-			float2 sample_uv = center_uv + float2((float)x, (float)y) * sample_step;
+			float2 sample_uv =
+				center_uv + float2(float(x), float(y)) * sample_step;
 			alpha_sum += image.Sample(linear_clamp, sample_uv).a * weight;
 			total_weight += weight;
 		}
@@ -313,8 +315,8 @@ float circular_blurred_alpha(float2 center_uv, float blur_width)
 
 	for (int i = 0; i < sample_count; i++) {
 		float normalized_radius =
-			sqrt(((float)i + 0.5) / (float)sample_count);
-		float angle = (float)i * golden_angle;
+			sqrt((float(i) + 0.5) / float(sample_count));
+		float angle = float(i) * golden_angle;
 		float2 direction = float2(cos(angle), sin(angle));
 		float weight =
 			exp(-3.0 * normalized_radius * normalized_radius);
@@ -460,7 +462,7 @@ float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 	if (debug_view == 7) {
 		float3 diagnostic_glow = glow_alpha > 0.000001
 			? glow_rgb / glow_alpha
-			: 0.0;
+			: float3(0.0, 0.0, 0.0);
 		return float4(diagnostic_glow, glow_alpha);
 	}
 	if (debug_view == 8)
