@@ -1,0 +1,480 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d environment_image;
+uniform texture2d background_image;
+
+uniform float2 texel_size;
+uniform bool ambient_enabled;
+uniform float ambient_base;
+uniform float ambient_amount;
+uniform bool exposure_enabled;
+uniform float exposure_target;
+uniform float exposure_strength;
+uniform float exposure_min;
+uniform float exposure_max;
+uniform float color_saturation;
+uniform float color_vibrance;
+uniform float color_contrast;
+uniform float color_limit;
+uniform bool rim_enabled;
+uniform float rim_amount;
+uniform float rim_color_amount;
+uniform float rim_layer_base;
+uniform int rim_blend_mode;
+uniform float rim_width;
+uniform float rim_softness;
+uniform float rim_scale;
+uniform float2 rim_offset;
+uniform bool keys_enabled;
+uniform bool bloom_enabled;
+uniform float bloom_amount;
+uniform float bloom_radius;
+uniform bool shadow_enabled;
+uniform float4 shadow_color;
+uniform float shadow_opacity;
+uniform float shadow_blur;
+uniform float2 shadow_offset;
+uniform bool glow_enabled;
+uniform float glow_amount;
+uniform float4 glow_color;
+uniform int glow_blend_mode;
+uniform float glow_width;
+uniform int debug_view;
+
+uniform float4 key_color_01;
+uniform float4 key_color_02;
+uniform float4 key_color_03;
+uniform float4 key_color_04;
+uniform float4 key_color_05;
+uniform float4 key_color_06;
+uniform float4 key_color_07;
+uniform float4 key_color_08;
+uniform float4 key_color_09;
+uniform float4 key_color_10;
+uniform float key_tolerance_01;
+uniform float key_tolerance_02;
+uniform float key_tolerance_03;
+uniform float key_tolerance_04;
+uniform float key_tolerance_05;
+uniform float key_tolerance_06;
+uniform float key_tolerance_07;
+uniform float key_tolerance_08;
+uniform float key_tolerance_09;
+uniform float key_tolerance_10;
+uniform float key_softness_01;
+uniform float key_softness_02;
+uniform float key_softness_03;
+uniform float key_softness_04;
+uniform float key_softness_05;
+uniform float key_softness_06;
+uniform float key_softness_07;
+uniform float key_softness_08;
+uniform float key_softness_09;
+uniform float key_softness_10;
+uniform float key_min_saturation_01;
+uniform float key_min_saturation_02;
+uniform float key_min_saturation_03;
+uniform float key_min_saturation_04;
+uniform float key_min_saturation_05;
+uniform float key_min_saturation_06;
+uniform float key_min_saturation_07;
+uniform float key_min_saturation_08;
+uniform float key_min_saturation_09;
+uniform float key_min_saturation_10;
+uniform float key_min_brightness_01;
+uniform float key_min_brightness_02;
+uniform float key_min_brightness_03;
+uniform float key_min_brightness_04;
+uniform float key_min_brightness_05;
+uniform float key_min_brightness_06;
+uniform float key_min_brightness_07;
+uniform float key_min_brightness_08;
+uniform float key_min_brightness_09;
+uniform float key_min_brightness_10;
+uniform float key_strength_01;
+uniform float key_strength_02;
+uniform float key_strength_03;
+uniform float key_strength_04;
+uniform float key_strength_05;
+uniform float key_strength_06;
+uniform float key_strength_07;
+uniform float key_strength_08;
+uniform float key_strength_09;
+uniform float key_strength_10;
+
+sampler_state linear_clamp {
+	Filter = Linear;
+	AddressU = Clamp;
+	AddressV = Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv = v_in.uv;
+	return vert_out;
+}
+
+float3 rgb_to_hsv(float3 c)
+{
+	float4 K = float4(0.0, -0.3333333333, 0.6666666667, -1.0);
+	float4 p = lerp(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
+	float4 q = lerp(float4(p.xyw, c.r), float4(c.r, p.yzx), step(p.x, c.r));
+	float d = q.x - min(q.w, q.y);
+	float e = 0.000001;
+	return float3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+float key_match(float3 source_rgb, float4 key, float tolerance, float softness,
+		float min_saturation, float min_brightness, float strength)
+{
+	if (key.a < 0.5)
+		return 0.0;
+
+	float3 source_hsv = rgb_to_hsv(saturate(source_rgb));
+	float3 key_hsv = rgb_to_hsv(saturate(key.rgb));
+	float hue_delta = abs(source_hsv.x - key_hsv.x);
+	hue_delta = min(hue_delta, 1.0 - hue_delta);
+
+	float saturated_pair = min(source_hsv.y, key_hsv.y);
+	float hue_term = hue_delta * lerp(0.0, 1.0, saturate(saturated_pair * 4.0));
+	float saturation_term = abs(source_hsv.y - key_hsv.y) * 0.30;
+	float brightness_term = abs(source_hsv.z - key_hsv.z) * 0.10;
+	float distance = hue_term + saturation_term + brightness_term;
+
+	float match = 1.0 - smoothstep(tolerance, tolerance + softness, distance);
+	match *= smoothstep(min_saturation,
+			    min(1.0, min_saturation + softness), source_hsv.y);
+	match *= smoothstep(min_brightness,
+			    min(1.0, min_brightness + softness), source_hsv.z);
+	return match * strength;
+}
+
+float emissive_match(float3 source_rgb)
+{
+	if (!keys_enabled)
+		return 0.0;
+
+	float match = 0.0;
+	match = max(match, key_match(source_rgb, key_color_01, key_tolerance_01,
+				     key_softness_01, key_min_saturation_01,
+				     key_min_brightness_01, key_strength_01));
+	match = max(match, key_match(source_rgb, key_color_02, key_tolerance_02,
+				     key_softness_02, key_min_saturation_02,
+				     key_min_brightness_02, key_strength_02));
+	match = max(match, key_match(source_rgb, key_color_03, key_tolerance_03,
+				     key_softness_03, key_min_saturation_03,
+				     key_min_brightness_03, key_strength_03));
+	match = max(match, key_match(source_rgb, key_color_04, key_tolerance_04,
+				     key_softness_04, key_min_saturation_04,
+				     key_min_brightness_04, key_strength_04));
+	match = max(match, key_match(source_rgb, key_color_05, key_tolerance_05,
+				     key_softness_05, key_min_saturation_05,
+				     key_min_brightness_05, key_strength_05));
+	match = max(match, key_match(source_rgb, key_color_06, key_tolerance_06,
+				     key_softness_06, key_min_saturation_06,
+				     key_min_brightness_06, key_strength_06));
+	match = max(match, key_match(source_rgb, key_color_07, key_tolerance_07,
+				     key_softness_07, key_min_saturation_07,
+				     key_min_brightness_07, key_strength_07));
+	match = max(match, key_match(source_rgb, key_color_08, key_tolerance_08,
+				     key_softness_08, key_min_saturation_08,
+				     key_min_brightness_08, key_strength_08));
+	match = max(match, key_match(source_rgb, key_color_09, key_tolerance_09,
+				     key_softness_09, key_min_saturation_09,
+				     key_min_brightness_09, key_strength_09));
+	match = max(match, key_match(source_rgb, key_color_10, key_tolerance_10,
+				     key_softness_10, key_min_saturation_10,
+				     key_min_brightness_10, key_strength_10));
+	return saturate(match);
+}
+
+float3 process_environment_color(float3 source_color)
+{
+	float3 color = max(source_color, 0.0);
+	float luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
+	color = lerp(luminance.xxx, color, color_saturation);
+
+	float maximum = max(color.r, max(color.g, color.b));
+	float minimum = min(color.r, min(color.g, color.b));
+	float chroma = saturate(maximum - minimum);
+	float vibrance_scale =
+		max(0.0, 1.0 + color_vibrance * (1.0 - chroma));
+	luminance = dot(color, float3(0.2126, 0.7152, 0.0722));
+	color = lerp(luminance.xxx, color, vibrance_scale);
+	color = max((color - 0.5) * color_contrast + 0.5, 0.0);
+
+	if (exposure_enabled) {
+		float measured =
+			max(dot(color, float3(0.2126, 0.7152, 0.0722)),
+			    0.0001);
+		float minimum_exposure = max(exposure_min, 0.0001);
+		float maximum_exposure =
+			max(exposure_max, minimum_exposure);
+		float compensation =
+			clamp(exposure_target / measured,
+			      minimum_exposure, maximum_exposure);
+		color *= lerp(1.0, compensation,
+			      saturate(exposure_strength));
+	}
+
+	float maximum_channel = max(color.r, max(color.g, color.b));
+	float safe_limit = max(color_limit, 0.0001);
+	if (maximum_channel > safe_limit)
+		color *= safe_limit / maximum_channel;
+
+	return max(color, 0.0);
+}
+
+float4 emissive_bloom_sample(float2 center_uv)
+{
+	if (!bloom_enabled || !keys_enabled || bloom_radius <= 0.01 ||
+	    bloom_amount <= 0.001)
+		return 0.0;
+
+	const int sample_count = 48;
+	const float golden_angle = 2.39996323;
+	float3 color_sum = 0.0;
+	float mask_sum = 0.0;
+	float total_weight = 0.0;
+
+	for (int i = 0; i < sample_count; i++) {
+		float normalized_radius =
+			sqrt(((float)i + 0.5) / (float)sample_count);
+		float angle = (float)i * golden_angle;
+		float2 direction = float2(cos(angle), sin(angle));
+		float weight =
+			exp(-3.25 * normalized_radius * normalized_radius);
+		float2 sample_uv =
+			center_uv + direction * normalized_radius *
+			bloom_radius * texel_size;
+		float4 source = image.Sample(linear_clamp, sample_uv);
+		float mask = emissive_match(source.rgb) * source.a;
+		color_sum += source.rgb * mask * weight;
+		mask_sum += mask * weight;
+		total_weight += weight;
+	}
+
+	float bloom_mask = mask_sum / max(total_weight, 0.000001);
+	float3 bloom_color =
+		mask_sum > 0.000001 ? color_sum / mask_sum : 0.0;
+	return float4(bloom_color, saturate(bloom_mask));
+}
+
+float gaussian_weight(int index)
+{
+	int distance = abs(index);
+	if (distance == 0)
+		return 0.204164;
+	if (distance == 1)
+		return 0.180174;
+	if (distance == 2)
+		return 0.123832;
+	if (distance == 3)
+		return 0.066282;
+	return 0.027631;
+}
+
+float blurred_alpha(float2 center_uv, float blur_width)
+{
+	float2 sample_step = texel_size * (blur_width * 0.25);
+	float alpha_sum = 0.0;
+	float total_weight = 0.0;
+
+	for (int y = -4; y <= 4; y++) {
+		float weight_y = gaussian_weight(y);
+		for (int x = -4; x <= 4; x++) {
+			float weight = gaussian_weight(x) * weight_y;
+			float2 sample_uv = center_uv + float2((float)x, (float)y) * sample_step;
+			alpha_sum += image.Sample(linear_clamp, sample_uv).a * weight;
+			total_weight += weight;
+		}
+	}
+
+	return alpha_sum / max(total_weight, 0.000001);
+}
+
+float circular_blurred_alpha(float2 center_uv, float blur_width)
+{
+	/*
+	 * A dense golden-angle disk avoids the square bands produced by a
+	 * small Cartesian sampling grid at large blur radii.
+	 */
+	const int sample_count = 128;
+	const float golden_angle = 2.39996323;
+	float alpha_sum = image.Sample(linear_clamp, center_uv).a;
+	float total_weight = 1.0;
+
+	for (int i = 0; i < sample_count; i++) {
+		float normalized_radius =
+			sqrt(((float)i + 0.5) / (float)sample_count);
+		float angle = (float)i * golden_angle;
+		float2 direction = float2(cos(angle), sin(angle));
+		float weight =
+			exp(-3.0 * normalized_radius * normalized_radius);
+		float2 sample_uv =
+			center_uv + direction * normalized_radius *
+			blur_width * texel_size;
+		alpha_sum +=
+			image.Sample(linear_clamp, sample_uv).a * weight;
+		total_weight += weight;
+	}
+
+	return alpha_sum / max(total_weight, 0.000001);
+}
+
+float inner_rim(float2 uv, float center_alpha)
+{
+	float safe_scale = max(rim_scale, 0.001);
+	float2 center_uv = (uv - 0.5) / safe_scale + 0.5;
+	center_uv += texel_size * rim_offset;
+	float alpha_blur =
+		circular_blurred_alpha(center_uv, rim_width);
+	float raw_rim = center_alpha * saturate(1.0 - alpha_blur);
+	float response = lerp(2.5, 0.55, saturate(rim_softness));
+	return pow(saturate(raw_rim), response);
+}
+
+float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
+{
+	float4 original = image.Sample(linear_clamp, v_in.uv);
+	float3 environment = process_environment_color(
+		environment_image.Sample(linear_clamp, v_in.uv).rgb);
+	float3 ambient_multiplier = ambient_base.xxx + environment * ambient_amount;
+	float3 ambient_result = ambient_enabled
+		? original.rgb * ambient_multiplier
+		: original.rgb;
+
+	float rim_mask = rim_enabled ? inner_rim(v_in.uv, original.a) : 0.0;
+	float3 rim_color = saturate(environment * rim_color_amount);
+	float rim_mix = saturate(rim_amount * rim_mask);
+	float3 lit_result = ambient_result;
+	if (rim_enabled) {
+		if (rim_blend_mode == 1) {
+			float3 screen_layer = saturate(rim_color * rim_mix);
+			lit_result = 1.0 - (1.0 - saturate(ambient_result)) *
+				     (1.0 - screen_layer);
+		} else if (rim_blend_mode == 2) {
+			lit_result = lerp(ambient_result, rim_color, rim_mix);
+		} else if (rim_blend_mode == 3) {
+			float3 duplicate_layer =
+				original.rgb * (rim_layer_base +
+						environment * rim_color_amount);
+			lit_result = lerp(ambient_result, duplicate_layer, rim_mix);
+		} else {
+			lit_result = ambient_result + rim_color * rim_amount * rim_mask;
+		}
+	}
+
+	float emissive = emissive_match(original.rgb) * original.a;
+
+	float3 avatar_rgb = lerp(lit_result, original.rgb, saturate(emissive));
+	float4 emissive_bloom =
+		emissive_bloom_sample(v_in.uv);
+	float3 bloom_light = emissive_bloom.rgb *
+			     emissive_bloom.a * bloom_amount;
+	avatar_rgb += bloom_light * original.a;
+
+	float shadow_alpha = 0.0;
+	if (shadow_enabled) {
+		float2 shadow_uv = v_in.uv - texel_size * shadow_offset;
+		shadow_alpha = blurred_alpha(shadow_uv, shadow_blur) *
+			       shadow_opacity * (1.0 - original.a);
+	}
+
+	float3 glow_rgb = 0.0;
+	float glow_alpha = 0.0;
+	if (glow_enabled) {
+		float glow_mask =
+			circular_blurred_alpha(v_in.uv, glow_width) *
+				  (1.0 - original.a);
+		glow_alpha = saturate(glow_mask * min(glow_amount, 1.0));
+		float3 color = saturate(glow_color.rgb);
+		float3 glow_light =
+			color * glow_mask * glow_amount;
+		float3 background =
+			background_image.Sample(linear_clamp, v_in.uv).rgb;
+
+		if (glow_blend_mode == 1) {
+			/* Screen blend, encoded as premultiplied filter output. */
+			glow_rgb =
+				(background + (1.0 - background) *
+				 saturate(glow_light)) -
+				background * (1.0 - glow_alpha);
+		} else if (glow_blend_mode == 2) {
+			/* Standard alpha blend. */
+			glow_rgb =
+				saturate(color * glow_amount) * glow_alpha;
+		} else {
+			/* Additive blend, encoded as premultiplied filter output. */
+			glow_rgb = glow_light +
+				   background * glow_alpha;
+		}
+	}
+
+	float3 shadow_rgb = shadow_color.rgb * shadow_alpha;
+	float bloom_alpha =
+		saturate(emissive_bloom.a * min(bloom_amount, 1.0)) *
+		(1.0 - original.a);
+	float3 background =
+		background_image.Sample(linear_clamp, v_in.uv).rgb;
+	float3 bloom_outer_rgb =
+		bloom_light * (1.0 - original.a) +
+		background * bloom_alpha;
+	float3 outer_rgb =
+		bloom_outer_rgb +
+		glow_rgb * (1.0 - bloom_alpha) +
+		shadow_rgb * (1.0 - bloom_alpha) *
+			(1.0 - glow_alpha);
+	float outer_alpha =
+		bloom_alpha + glow_alpha * (1.0 - bloom_alpha) +
+		shadow_alpha * (1.0 - bloom_alpha) *
+			(1.0 - glow_alpha);
+	float final_alpha = saturate(original.a + outer_alpha);
+	float3 final_premultiplied =
+		avatar_rgb * original.a + outer_rgb;
+	float3 final_rgb = final_alpha > 0.000001
+		? final_premultiplied / final_alpha
+		: 0.0;
+
+	if (debug_view == 1)
+		return float4(environment, 1.0);
+	if (debug_view == 2)
+		return float4(ambient_result, original.a);
+	if (debug_view == 3)
+		return float4((rim_color * rim_amount * rim_mask), original.a);
+	if (debug_view == 4)
+		return float4(emissive.xxx, original.a);
+	if (debug_view == 5)
+		return original;
+	if (debug_view == 6)
+		return shadow_alpha > 0.000001
+			? float4(shadow_rgb / shadow_alpha, shadow_alpha)
+			: float4(0.0, 0.0, 0.0, 0.0);
+	if (debug_view == 7) {
+		float3 diagnostic_glow = glow_alpha > 0.000001
+			? glow_rgb / glow_alpha
+			: 0.0;
+		return float4(diagnostic_glow, glow_alpha);
+	}
+	if (debug_view == 8)
+		return float4(emissive_bloom.rgb * bloom_amount,
+			      emissive_bloom.a);
+
+	return float4(final_rgb, saturate(final_alpha));
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader = PSDynamicAvatarLighting(v_in);
+	}
+}
