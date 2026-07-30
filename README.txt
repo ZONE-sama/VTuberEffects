@@ -1,5 +1,5 @@
 VTUBER EFFECTS FOR OBS
-Version 0.15.8
+Version 0.15.9
 
 
 OVERVIEW
@@ -412,7 +412,7 @@ Lower that color entry's tolerance or softness.
 Raise its minimum saturation or minimum brightness.
 
 
-VERSION 0.15.8
+VERSION 0.15.9
 
 Retargeted the Windows and macOS builds to the OBS Studio 29.0.2 SDK and its
 matching OBS dependency and Qt generation.
@@ -421,3 +421,6 @@ Lowered the universal macOS deployment target to macOS 11.0.
 
 Disabled OBS scripting while preparing the compatibility SDK and installed
 OBS 29's libobs development component using its original component name.
+
+Built OBS 29's frontend API alongside libobs because both libraries share the
+same development install component in that OBS release.

@@ -46,7 +46,7 @@ function(_check_deps_version version)
   return(PROPAGATE found CMAKE_PREFIX_PATH)
 endfunction()
 
-# _setup_obs_studio: Create the OBS build project, then build and install libobs
+# _setup_obs_studio: Build the OBS libraries required by its development component
 function(_setup_obs_studio)
   if(NOT libobs_DIR)
     set(_is_fresh --fresh)
@@ -80,7 +80,7 @@ function(_setup_obs_studio)
 
   message(STATUS "Build ${label} (Debug - ${arch})")
   execute_process(
-    COMMAND "${CMAKE_COMMAND}" --build build_${arch} --target libobs --config Debug --parallel
+    COMMAND "${CMAKE_COMMAND}" --build build_${arch} --target obs-frontend-api --config Debug --parallel
     WORKING_DIRECTORY "${dependencies_dir}/${_obs_destination}"
     RESULT_VARIABLE _process_result
     COMMAND_ERROR_IS_FATAL ANY
@@ -90,7 +90,7 @@ function(_setup_obs_studio)
 
   message(STATUS "Build ${label} (Release - ${arch})")
   execute_process(
-    COMMAND "${CMAKE_COMMAND}" --build build_${arch} --target libobs --config Release --parallel
+    COMMAND "${CMAKE_COMMAND}" --build build_${arch} --target obs-frontend-api --config Release --parallel
     WORKING_DIRECTORY "${dependencies_dir}/${_obs_destination}"
     RESULT_VARIABLE _process_result
     COMMAND_ERROR_IS_FATAL ANY
