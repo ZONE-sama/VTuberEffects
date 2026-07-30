@@ -1,6 +1,7 @@
 uniform float4x4 ViewProj;
 uniform texture2d image;
 uniform texture2d environment_image;
+uniform texture2d rim_environment_image;
 uniform texture2d background_image;
 
 uniform float2 texel_size;
@@ -24,6 +25,7 @@ uniform int rim_blend_mode;
 uniform float rim_width;
 uniform float rim_softness;
 uniform float rim_scale;
+uniform float2 rim_pivot;
 uniform float2 rim_offset;
 uniform bool keys_enabled;
 uniform bool bloom_enabled;
@@ -339,8 +341,7 @@ float inner_rim(float2 uv, float center_alpha)
 {
 	float safe_scale = max(rim_scale, 0.001);
 	float2 center_uv =
-		(uv - float2(0.5, 0.5)) / safe_scale +
-		float2(0.5, 0.5);
+		(uv - rim_pivot) / safe_scale + rim_pivot;
 	center_uv += texel_size * rim_offset;
 	float alpha_blur =
 		circular_blurred_alpha(center_uv, rim_width);
@@ -352,8 +353,17 @@ float inner_rim(float2 uv, float center_alpha)
 float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 {
 	float4 original = image.Sample(linear_clamp, v_in.uv);
+	float4 environment_sample =
+		environment_image.Sample(linear_clamp, v_in.uv);
+	float environment_weight = max(environment_sample.a, 0.0001);
 	float3 environment = process_environment_color(
-		environment_image.Sample(linear_clamp, v_in.uv).rgb);
+		environment_sample.rgb / environment_weight);
+	float4 rim_environment_sample =
+		rim_environment_image.Sample(linear_clamp, v_in.uv);
+	float rim_environment_weight =
+		max(rim_environment_sample.a, 0.0001);
+	float3 rim_environment = process_environment_color(
+		rim_environment_sample.rgb / rim_environment_weight);
 	float3 ambient_multiplier =
 		float3(ambient_base, ambient_base, ambient_base) +
 		environment * ambient_amount;
@@ -362,7 +372,8 @@ float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 		: original.rgb;
 
 	float rim_mask = rim_enabled ? inner_rim(v_in.uv, original.a) : 0.0;
-	float3 rim_color = saturate(environment * rim_color_amount);
+	float3 rim_color =
+		saturate(rim_environment * rim_color_amount);
 	float rim_mix = saturate(rim_amount * rim_mask);
 	float3 lit_result = ambient_result;
 	if (rim_enabled) {
@@ -381,7 +392,7 @@ float4 PSDynamicAvatarLighting(VertData v_in) : TARGET
 				original.rgb *
 				(float3(rim_layer_base, rim_layer_base,
 					rim_layer_base) +
-				 environment * rim_color_amount);
+				 rim_environment * rim_color_amount);
 			lit_result = lerp(ambient_result, duplicate_layer, rim_mix);
 		} else {
 			lit_result = ambient_result + rim_color * rim_amount * rim_mask;

@@ -16,6 +16,7 @@
 #define BLUR_LEVEL_COUNT 8
 
 #define S_ENVIRONMENT "environment_source"
+#define S_RIM_ENVIRONMENT "rim_environment_source"
 #define S_ENVIRONMENT_WARNING "environment_warning"
 #define S_PRESET_STATUS "preset_status"
 #define S_AMBIENT_ENABLED "ambient_enabled"
@@ -39,6 +40,8 @@
 #define S_RIM_WIDTH "rim_width"
 #define S_RIM_SOFTNESS "rim_softness"
 #define S_RIM_SCALE "rim_scale"
+#define S_RIM_PIVOT_X "rim_pivot_x"
+#define S_RIM_PIVOT_Y "rim_pivot_y"
 #define S_RIM_OFFSET_X "rim_offset_x"
 #define S_RIM_OFFSET_Y "rim_offset_y"
 #define S_KEYS_ENABLED "keys_enabled"
@@ -101,14 +104,19 @@ struct dal_filter {
 	obs_source_t *context;
 	obs_source_t *environment;
 	char *environment_name;
+	obs_source_t *rim_environment;
+	char *rim_environment_name;
 
 	gs_effect_t *effect;
 	gs_effect_t *blur_effect;
 	gs_texrender_t *environment_render;
+	gs_texrender_t *environment_final_render;
+	gs_texrender_t *rim_environment_render;
 	gs_texrender_t *blur_down[BLUR_LEVEL_COUNT];
 	gs_texrender_t *blur_up[BLUR_LEVEL_COUNT];
 
 	gs_eparam_t *p_environment_image;
+	gs_eparam_t *p_rim_environment_image;
 	gs_eparam_t *p_background_image;
 	gs_eparam_t *p_texel_size;
 	gs_eparam_t *p_ambient_enabled;
@@ -131,6 +139,7 @@ struct dal_filter {
 	gs_eparam_t *p_rim_width;
 	gs_eparam_t *p_rim_softness;
 	gs_eparam_t *p_rim_scale;
+	gs_eparam_t *p_rim_pivot;
 	gs_eparam_t *p_rim_offset;
 	gs_eparam_t *p_keys_enabled;
 	gs_eparam_t *p_bloom_enabled;
@@ -178,6 +187,7 @@ struct dal_filter {
 	float rim_width;
 	float rim_softness;
 	float rim_scale;
+	struct vec2 rim_pivot;
 	struct vec2 rim_offset;
 	bool keys_enabled;
 	int key_count;
@@ -222,6 +232,14 @@ static void release_environment(struct dal_filter *filter)
 	}
 }
 
+static void release_rim_environment(struct dal_filter *filter)
+{
+	if (filter->rim_environment) {
+		obs_source_release(filter->rim_environment);
+		filter->rim_environment = NULL;
+	}
+}
+
 static void load_effect(struct dal_filter *filter)
 {
 	char *path = obs_module_file("effects/dynamic-avatar-lighting.effect");
@@ -243,6 +261,9 @@ static void load_effect(struct dal_filter *filter)
 		return;
 
 	filter->p_environment_image = gs_effect_get_param_by_name(filter->effect, "environment_image");
+	filter->p_rim_environment_image =
+		gs_effect_get_param_by_name(filter->effect,
+					    "rim_environment_image");
 	filter->p_background_image = gs_effect_get_param_by_name(filter->effect, "background_image");
 	filter->p_texel_size = gs_effect_get_param_by_name(filter->effect, "texel_size");
 	filter->p_ambient_enabled = gs_effect_get_param_by_name(filter->effect, "ambient_enabled");
@@ -283,6 +304,7 @@ static void load_effect(struct dal_filter *filter)
 	filter->p_rim_width = gs_effect_get_param_by_name(filter->effect, "rim_width");
 	filter->p_rim_softness = gs_effect_get_param_by_name(filter->effect, "rim_softness");
 	filter->p_rim_scale = gs_effect_get_param_by_name(filter->effect, "rim_scale");
+	filter->p_rim_pivot = gs_effect_get_param_by_name(filter->effect, "rim_pivot");
 	filter->p_rim_offset = gs_effect_get_param_by_name(filter->effect, "rim_offset");
 	filter->p_keys_enabled = gs_effect_get_param_by_name(filter->effect, "keys_enabled");
 	filter->p_bloom_enabled =
@@ -350,6 +372,10 @@ static void *dal_create(obs_data_t *settings, obs_source_t *context)
 
 	obs_enter_graphics();
 	filter->environment_render = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	filter->environment_final_render =
+		gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+	filter->rim_environment_render =
+		gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 	for (int i = 0; i < BLUR_LEVEL_COUNT; i++) {
 		filter->blur_down[i] = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
 		filter->blur_up[i] = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
@@ -365,7 +391,9 @@ static void dal_destroy(void *data)
 {
 	struct dal_filter *filter = data;
 	release_environment(filter);
+	release_rim_environment(filter);
 	bfree(filter->environment_name);
+	bfree(filter->rim_environment_name);
 
 	obs_enter_graphics();
 	if (filter->effect)
@@ -374,6 +402,10 @@ static void dal_destroy(void *data)
 		gs_effect_destroy(filter->blur_effect);
 	if (filter->environment_render)
 		gs_texrender_destroy(filter->environment_render);
+	if (filter->environment_final_render)
+		gs_texrender_destroy(filter->environment_final_render);
+	if (filter->rim_environment_render)
+		gs_texrender_destroy(filter->rim_environment_render);
 	for (int i = 0; i < BLUR_LEVEL_COUNT; i++) {
 		if (filter->blur_down[i])
 			gs_texrender_destroy(filter->blur_down[i]);
@@ -389,6 +421,8 @@ static void dal_update(void *data, obs_data_t *settings)
 {
 	struct dal_filter *filter = data;
 	const char *new_name = obs_data_get_string(settings, S_ENVIRONMENT);
+	const char *new_rim_name =
+		obs_data_get_string(settings, S_RIM_ENVIRONMENT);
 
 	if (!filter->environment_name || strcmp(filter->environment_name, new_name) != 0) {
 		release_environment(filter);
@@ -397,6 +431,17 @@ static void dal_update(void *data, obs_data_t *settings)
 
 		if (new_name && *new_name)
 			filter->environment = obs_get_source_by_name(new_name);
+	}
+
+	if (!filter->rim_environment_name ||
+	    strcmp(filter->rim_environment_name, new_rim_name) != 0) {
+		release_rim_environment(filter);
+		bfree(filter->rim_environment_name);
+		filter->rim_environment_name = bstrdup(new_rim_name);
+
+		if (new_rim_name && *new_rim_name)
+			filter->rim_environment =
+				obs_get_source_by_name(new_rim_name);
 	}
 
 	filter->ambient_enabled = obs_data_get_bool(settings, S_AMBIENT_ENABLED);
@@ -429,6 +474,10 @@ static void dal_update(void *data, obs_data_t *settings)
 	filter->rim_width = (float)obs_data_get_double(settings, S_RIM_WIDTH);
 	filter->rim_softness = (float)obs_data_get_double(settings, S_RIM_SOFTNESS);
 	filter->rim_scale = (float)obs_data_get_double(settings, S_RIM_SCALE);
+	filter->rim_pivot.x =
+		(float)obs_data_get_double(settings, S_RIM_PIVOT_X) * 0.01f;
+	filter->rim_pivot.y =
+		(float)obs_data_get_double(settings, S_RIM_PIVOT_Y) * 0.01f;
 	filter->rim_offset.x = (float)obs_data_get_double(settings, S_RIM_OFFSET_X);
 	filter->rim_offset.y = (float)obs_data_get_double(settings, S_RIM_OFFSET_Y);
 	filter->keys_enabled = obs_data_get_bool(settings, S_KEYS_ENABLED);
@@ -500,10 +549,15 @@ static void dal_tick(void *data, float seconds)
 	    *filter->environment_name)
 		filter->environment =
 			obs_get_source_by_name(filter->environment_name);
+	if (!filter->rim_environment && filter->rim_environment_name &&
+	    *filter->rim_environment_name)
+		filter->rim_environment =
+			obs_get_source_by_name(filter->rim_environment_name);
 }
 
 static void dal_defaults(obs_data_t *settings)
 {
+	obs_data_set_default_string(settings, S_RIM_ENVIRONMENT, "");
 	obs_data_set_default_bool(settings, S_AMBIENT_ENABLED, true);
 	obs_data_set_default_double(settings, S_AMBIENT_BASE, 0.20);
 	obs_data_set_default_double(settings, S_AMBIENT_AMOUNT, 2.00);
@@ -526,6 +580,8 @@ static void dal_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, S_RIM_WIDTH, 25.0);
 	obs_data_set_default_double(settings, S_RIM_SOFTNESS, 0.75);
 	obs_data_set_default_double(settings, S_RIM_SCALE, 0.935);
+	obs_data_set_default_double(settings, S_RIM_PIVOT_X, 50.0);
+	obs_data_set_default_double(settings, S_RIM_PIVOT_Y, 50.0);
 	obs_data_set_default_double(settings, S_RIM_OFFSET_X, -25.0);
 	obs_data_set_default_double(settings, S_RIM_OFFSET_Y, -15.0);
 	obs_data_set_default_bool(settings, S_KEYS_ENABLED, true);
@@ -706,6 +762,16 @@ static void copy_effect_settings(obs_data_t *destination,
 			    obs_data_get_double(source, S_RIM_SOFTNESS));
 	obs_data_set_double(destination, S_RIM_SCALE,
 			    obs_data_get_double(source, S_RIM_SCALE));
+	obs_data_set_double(destination, S_RIM_PIVOT_X,
+			    obs_data_has_user_value(source, S_RIM_PIVOT_X)
+				    ? obs_data_get_double(source,
+							 S_RIM_PIVOT_X)
+				    : 50.0);
+	obs_data_set_double(destination, S_RIM_PIVOT_Y,
+			    obs_data_has_user_value(source, S_RIM_PIVOT_Y)
+				    ? obs_data_get_double(source,
+							 S_RIM_PIVOT_Y)
+				    : 50.0);
 	obs_data_set_double(destination, S_RIM_OFFSET_X,
 			    obs_data_get_double(source, S_RIM_OFFSET_X));
 	obs_data_set_double(destination, S_RIM_OFFSET_Y,
@@ -915,6 +981,8 @@ static bool reset_rim_clicked(obs_properties_t *props,
 	obs_data_set_double(settings, S_RIM_WIDTH, 25.0);
 	obs_data_set_double(settings, S_RIM_SOFTNESS, 0.75);
 	obs_data_set_double(settings, S_RIM_SCALE, 0.935);
+	obs_data_set_double(settings, S_RIM_PIVOT_X, 50.0);
+	obs_data_set_double(settings, S_RIM_PIVOT_Y, 50.0);
 	obs_data_set_double(settings, S_RIM_OFFSET_X, -25.0);
 	obs_data_set_double(settings, S_RIM_OFFSET_Y, -15.0);
 	bool updated = update_filter_settings(data, settings);
@@ -1035,6 +1103,16 @@ static obs_properties_t *dal_properties(void *data)
 	set_tooltip(environment, "Environment.Source.Tooltip");
 	obs_property_set_modified_callback(environment,
 					   environment_modified);
+
+	obs_property_t *rim_environment = obs_properties_add_list(
+		props, S_RIM_ENVIRONMENT,
+		obs_module_text("Environment.RimSource"),
+		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(
+		rim_environment,
+		obs_module_text("Environment.RimSource.Same"), "");
+	obs_enum_sources(source_enum_callback, rim_environment);
+	set_tooltip(rim_environment, "Environment.RimSource.Tooltip");
 
 	obs_property_t *environment_warning = obs_properties_add_text(
 		props, S_ENVIRONMENT_WARNING,
@@ -1185,6 +1263,12 @@ static obs_properties_t *dal_properties(void *data)
 					0.01, 1.0, 0.01);
 	obs_properties_add_float_slider(rim, S_RIM_SCALE, obs_module_text("Rim.Scale"),
 					0.50, 1.50, 0.005);
+	obs_properties_add_float_slider(
+		rim, S_RIM_PIVOT_X, obs_module_text("Rim.PivotX"), 0.0,
+		100.0, 0.5);
+	obs_properties_add_float_slider(
+		rim, S_RIM_PIVOT_Y, obs_module_text("Rim.PivotY"), 0.0,
+		100.0, 0.5);
 	obs_properties_add_float_slider(rim, S_RIM_OFFSET_X, obs_module_text("Rim.OffsetX"),
 					-50.0, 50.0, 0.25);
 	obs_properties_add_float_slider(rim, S_RIM_OFFSET_Y, obs_module_text("Rim.OffsetY"),
@@ -1198,6 +1282,10 @@ static obs_properties_t *dal_properties(void *data)
 	set_tooltip(obs_properties_get(rim, S_RIM_WIDTH), "Rim.Width.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_SOFTNESS), "Rim.Softness.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_SCALE), "Rim.Scale.Tooltip");
+	set_tooltip(obs_properties_get(rim, S_RIM_PIVOT_X),
+		    "Rim.PivotX.Tooltip");
+	set_tooltip(obs_properties_get(rim, S_RIM_PIVOT_Y),
+		    "Rim.PivotY.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_OFFSET_X), "Rim.OffsetX.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_OFFSET_Y), "Rim.OffsetY.Tooltip");
 	obs_properties_add_button2(
@@ -1418,20 +1506,23 @@ static int blur_levels_for_radius(float radius)
 	return levels;
 }
 
-static gs_texture_t *render_environment(struct dal_filter *filter, uint32_t width, uint32_t height)
+static gs_texture_t *render_environment(struct dal_filter *filter,
+					obs_source_t *source,
+					gs_texrender_t *source_render,
+					uint32_t width, uint32_t height)
 {
 	obs_source_t *parent = obs_filter_get_parent(filter->context);
-	if (!filter->environment || filter->environment == parent ||
-	    filter->environment == filter->context || width == 0 || height == 0)
+	if (!source || !source_render || source == parent ||
+	    source == filter->context || width == 0 || height == 0)
 		return NULL;
 
-	const uint32_t env_width = obs_source_get_width(filter->environment);
-	const uint32_t env_height = obs_source_get_height(filter->environment);
+	const uint32_t env_width = obs_source_get_width(source);
+	const uint32_t env_height = obs_source_get_height(source);
 	if (env_width == 0 || env_height == 0)
 		return NULL;
 
-	gs_texrender_reset(filter->environment_render);
-	if (!gs_texrender_begin(filter->environment_render, width, height))
+	gs_texrender_reset(source_render);
+	if (!gs_texrender_begin(source_render, width, height))
 		return NULL;
 
 	struct vec4 clear = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -1442,16 +1533,20 @@ static gs_texture_t *render_environment(struct dal_filter *filter, uint32_t widt
 	gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
 	gs_ortho(0.0f, (float)env_width, 0.0f, (float)env_height, -100.0f, 100.0f);
 	gs_set_viewport(0, 0, width, height);
-	obs_source_video_render(filter->environment);
+	obs_source_video_render(source);
 	gs_matrix_pop();
 	gs_projection_pop();
 	gs_viewport_pop();
-	gs_texrender_end(filter->environment_render);
+	gs_texrender_end(source_render);
 
-	gs_texture_t *texture = gs_texrender_get_texture(filter->environment_render);
+	gs_texture_t *texture = gs_texrender_get_texture(source_render);
 	const int levels = blur_levels_for_radius(filter->ambient_blur);
-	if (levels == 0)
-		return texture;
+	if (levels == 0) {
+		if (!render_blur_pass(filter, texture, filter->blur_down[0],
+				      width, height, 1.0f, "AlphaWeight"))
+			return NULL;
+		return gs_texrender_get_texture(filter->blur_down[0]);
+	}
 
 	uint32_t level_widths[BLUR_LEVEL_COUNT];
 	uint32_t level_heights[BLUR_LEVEL_COUNT];
@@ -1467,8 +1562,11 @@ static gs_texture_t *render_environment(struct dal_filter *filter, uint32_t widt
 		level_widths[i] = pass_width;
 		level_heights[i] = pass_height;
 
-		if (!render_blur_pass(filter, texture, filter->blur_down[i], pass_width,
-				      pass_height, sample_offset, "Downsample"))
+		const char *technique =
+			i == 0 ? "DownsampleAlphaWeighted" : "Downsample";
+		if (!render_blur_pass(filter, texture, filter->blur_down[i],
+				      pass_width, pass_height, sample_offset,
+				      technique))
 			return texture;
 		texture = gs_texrender_get_texture(filter->blur_down[i]);
 	}
@@ -1495,19 +1593,45 @@ static void dal_render(void *data, gs_effect_t *unused)
 	struct dal_filter *filter = data;
 	obs_source_t *target = obs_filter_get_target(filter->context);
 
-	if (!target || !filter->effect || !filter->blur_effect || !filter->environment_render) {
+	if (!target || !filter->effect || !filter->blur_effect ||
+	    !filter->environment_render ||
+	    !filter->environment_final_render ||
+	    !filter->rim_environment_render) {
 		obs_source_skip_video_filter(filter->context);
 		return;
 	}
 
 	const uint32_t width = obs_source_get_base_width(target);
 	const uint32_t height = obs_source_get_base_height(target);
-	gs_texture_t *environment_texture = render_environment(filter, width, height);
+	gs_texture_t *environment_texture = render_environment(
+		filter, filter->environment, filter->environment_render,
+		width, height);
 	gs_texture_t *background_texture =
 		gs_texrender_get_texture(filter->environment_render);
 	if (!environment_texture || !background_texture) {
 		obs_source_skip_video_filter(filter->context);
 		return;
+	}
+
+	if (!render_blur_pass(filter, environment_texture,
+			      filter->environment_final_render, width, height,
+			      1.0f, "Copy")) {
+		obs_source_skip_video_filter(filter->context);
+		return;
+	}
+	environment_texture =
+		gs_texrender_get_texture(filter->environment_final_render);
+
+	obs_source_t *rim_source = filter->rim_environment
+					   ? filter->rim_environment
+					   : filter->environment;
+	gs_texture_t *rim_environment_texture = environment_texture;
+	if (rim_source != filter->environment) {
+		rim_environment_texture = render_environment(
+			filter, rim_source, filter->rim_environment_render,
+			width, height);
+		if (!rim_environment_texture)
+			rim_environment_texture = environment_texture;
 	}
 
 	if (!obs_source_process_filter_begin(filter->context, GS_RGBA, OBS_NO_DIRECT_RENDERING)) {
@@ -1517,6 +1641,8 @@ static void dal_render(void *data, gs_effect_t *unused)
 
 	struct vec2 texel_size = {1.0f / (float)width, 1.0f / (float)height};
 	gs_effect_set_texture(filter->p_environment_image, environment_texture);
+	gs_effect_set_texture(filter->p_rim_environment_image,
+			      rim_environment_texture);
 	gs_effect_set_texture(filter->p_background_image, background_texture);
 	gs_effect_set_vec2(filter->p_texel_size, &texel_size);
 	gs_effect_set_bool(filter->p_ambient_enabled, filter->ambient_enabled);
@@ -1548,6 +1674,7 @@ static void dal_render(void *data, gs_effect_t *unused)
 	gs_effect_set_float(filter->p_rim_width, filter->rim_width);
 	gs_effect_set_float(filter->p_rim_softness, filter->rim_softness);
 	gs_effect_set_float(filter->p_rim_scale, filter->rim_scale);
+	gs_effect_set_vec2(filter->p_rim_pivot, &filter->rim_pivot);
 	gs_effect_set_vec2(filter->p_rim_offset, &filter->rim_offset);
 	gs_effect_set_bool(filter->p_keys_enabled, filter->keys_enabled);
 	gs_effect_set_bool(filter->p_bloom_enabled, filter->bloom_enabled);

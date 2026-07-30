@@ -22,6 +22,38 @@ VertData VSDefault(VertData v_in)
 	return vert_out;
 }
 
+float4 alpha_weighted_environment_sample(float2 uv)
+{
+	float4 source = image.Sample(linear_clamp, uv);
+	return float4(source.rgb * source.a, source.a);
+}
+
+float4 PSDownsampleAlphaWeighted(VertData v_in) : TARGET
+{
+	float2 offset = texel_size * sample_offset;
+	float4 total =
+		alpha_weighted_environment_sample(v_in.uv) * 4.0;
+	total += alpha_weighted_environment_sample(
+		v_in.uv + float2(-offset.x, -offset.y));
+	total += alpha_weighted_environment_sample(
+		v_in.uv + float2(offset.x, -offset.y));
+	total += alpha_weighted_environment_sample(
+		v_in.uv + float2(-offset.x, offset.y));
+	total += alpha_weighted_environment_sample(
+		v_in.uv + float2(offset.x, offset.y));
+	return total * 0.125;
+}
+
+float4 PSAlphaWeight(VertData v_in) : TARGET
+{
+	return alpha_weighted_environment_sample(v_in.uv);
+}
+
+float4 PSCopy(VertData v_in) : TARGET
+{
+	return image.Sample(linear_clamp, v_in.uv);
+}
+
 float4 PSDownsample(VertData v_in) : TARGET
 {
 	float2 offset = texel_size * sample_offset;
@@ -46,6 +78,33 @@ float4 PSUpsample(VertData v_in) : TARGET
 	total += image.Sample(linear_clamp, v_in.uv + float2(-half_offset.x, half_offset.y)) * 2.0;
 	total += image.Sample(linear_clamp, v_in.uv + float2(half_offset.x, half_offset.y)) * 2.0;
 	return total / 12.0;
+}
+
+technique DownsampleAlphaWeighted
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader = PSDownsampleAlphaWeighted(v_in);
+	}
+}
+
+technique AlphaWeight
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader = PSAlphaWeight(v_in);
+	}
+}
+
+technique Copy
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader = PSCopy(v_in);
+	}
 }
 
 technique Downsample
