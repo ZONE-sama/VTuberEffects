@@ -1,5 +1,5 @@
 VTUBER EFFECTS FOR OBS
-Version 0.15.9
+Version 1.0.0-beta1
 
 
 OVERVIEW
@@ -424,7 +424,11 @@ Lower that color entry's tolerance or softness.
 Raise its minimum saturation or minimum brightness.
 
 
-VERSION 0.15.9
+VERSION 1.0.0-beta1
+
+First public beta release. GitHub release tags use the same version shown by
+the plugin, beginning with 1.0.0-beta1 and incrementing the beta number until
+the stable 1.0.0 release.
 
 Retargeted the Windows and macOS builds to the OBS Studio 29.0.2 SDK and its
 matching OBS dependency and Qt generation.
