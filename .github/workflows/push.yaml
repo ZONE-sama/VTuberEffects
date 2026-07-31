@@ -100,7 +100,10 @@ jobs:
         with:
           draft: false
           prerelease: ${{ fromJSON(steps.check.outputs.prerelease) }}
-          fail_on_unmatched_files: true
+          # Each platform can produce a different subset of these formats.
+          # Do not fail the whole release merely because an optional format
+          # (for example, a Windows .exe installer) was not generated.
+          fail_on_unmatched_files: false
           tag_name: ${{ steps.check.outputs.version }}
           name: ${{ needs.build-project.outputs.pluginName }} ${{ steps.check.outputs.version }}
           body_path: ${{ github.workspace }}/CHECKSUMS.txt
