@@ -199,7 +199,18 @@ Rim softness
 Controls the transition between the rim and the rest of the avatar.
 
 Rim mask scale
-Scales the silhouette used to calculate the rim.
+Scales the silhouette used to calculate the rim around its current center.
+
+Follow avatar automatically
+Finds the center of the avatar's visible alpha silhouette every frame. Keep
+this enabled when an avatar can move, resize, or occupy an off-center part of
+a full-frame capture. Rim scale and offsets will remain relative to the
+avatar instead of the center of the canvas.
+
+Manual rim pivot X and Y
+Sets the scale center as a percentage of the full frame when automatic
+following is disabled. These controls are intended as a fallback for unusual
+sources whose alpha cannot be tracked reliably.
 
 Horizontal offset
 Moves the rim mask left or right.
@@ -217,6 +228,7 @@ Blend mode: Masked Duplicate
 Rim width: 25 pixels
 Rim softness: 0.75
 Rim mask scale: 0.935
+Follow avatar automatically: Enabled
 Horizontal offset: -25 pixels
 Vertical offset: -15 pixels
 
