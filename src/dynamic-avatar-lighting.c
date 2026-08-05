@@ -42,6 +42,7 @@
 #define S_RIM_POSITION_MODE "rim_position_mode"
 #define S_RIM_WIDTH "rim_width"
 #define S_RIM_SOFTNESS "rim_softness"
+#define S_RIM_LOCAL_EXPANSION "rim_local_expansion"
 #define S_RIM_SCALE "rim_scale"
 #define S_RIM_AUTO_PIVOT "rim_auto_pivot"
 #define S_RIM_STABLE_TRACKING "rim_stable_tracking"
@@ -151,6 +152,7 @@ struct dal_filter {
 	gs_eparam_t *p_rim_position_mode;
 	gs_eparam_t *p_rim_width;
 	gs_eparam_t *p_rim_softness;
+	gs_eparam_t *p_rim_local_expansion;
 	gs_eparam_t *p_rim_scale;
 	gs_eparam_t *p_rim_auto_pivot;
 	gs_eparam_t *p_rim_stable_tracking;
@@ -204,6 +206,7 @@ struct dal_filter {
 	int rim_position_mode;
 	float rim_width;
 	float rim_softness;
+	float rim_local_expansion;
 	float rim_scale;
 	bool rim_auto_pivot;
 	bool rim_stable_tracking;
@@ -331,6 +334,8 @@ static void load_effect(struct dal_filter *filter)
 		filter->effect, "rim_position_mode");
 	filter->p_rim_width = gs_effect_get_param_by_name(filter->effect, "rim_width");
 	filter->p_rim_softness = gs_effect_get_param_by_name(filter->effect, "rim_softness");
+	filter->p_rim_local_expansion = gs_effect_get_param_by_name(
+		filter->effect, "rim_local_expansion");
 	filter->p_rim_scale = gs_effect_get_param_by_name(filter->effect, "rim_scale");
 	filter->p_rim_auto_pivot =
 		gs_effect_get_param_by_name(filter->effect, "rim_auto_pivot");
@@ -511,6 +516,8 @@ static void dal_update(void *data, obs_data_t *settings)
 		(int)obs_data_get_int(settings, S_RIM_POSITION_MODE);
 	filter->rim_width = (float)obs_data_get_double(settings, S_RIM_WIDTH);
 	filter->rim_softness = (float)obs_data_get_double(settings, S_RIM_SOFTNESS);
+	filter->rim_local_expansion =
+		(float)obs_data_get_double(settings, S_RIM_LOCAL_EXPANSION);
 	filter->rim_scale = (float)obs_data_get_double(settings, S_RIM_SCALE);
 	filter->rim_auto_pivot =
 		obs_data_get_bool(settings, S_RIM_AUTO_PIVOT);
@@ -625,6 +632,7 @@ static void dal_defaults(obs_data_t *settings)
 				 RIM_POSITION_SCALED_DUPLICATE);
 	obs_data_set_default_double(settings, S_RIM_WIDTH, 25.0);
 	obs_data_set_default_double(settings, S_RIM_SOFTNESS, 0.75);
+	obs_data_set_default_double(settings, S_RIM_LOCAL_EXPANSION, 0.0);
 	obs_data_set_default_double(settings, S_RIM_SCALE, 0.935);
 	obs_data_set_default_bool(settings, S_RIM_AUTO_PIVOT, true);
 	obs_data_set_default_bool(settings, S_RIM_STABLE_TRACKING, false);
@@ -730,6 +738,11 @@ static bool rim_position_mode_modified(obs_properties_t *props,
 	UNUSED_PARAMETER(property);
 	const bool scaled = obs_data_get_int(settings, S_RIM_POSITION_MODE) ==
 			    RIM_POSITION_SCALED_DUPLICATE;
+	obs_property_t *local_expansion =
+		obs_properties_get(props, S_RIM_LOCAL_EXPANSION);
+	if (local_expansion)
+		obs_property_set_visible(local_expansion, !scaled);
+
 	const char *scaled_controls[] = {
 		S_RIM_SCALE,       S_RIM_AUTO_PIVOT,
 		S_RIM_STABLE_TRACKING, S_RIM_PIVOT_X,
@@ -847,6 +860,11 @@ static void copy_effect_settings(obs_data_t *destination,
 			    obs_data_get_double(source, S_RIM_WIDTH));
 	obs_data_set_double(destination, S_RIM_SOFTNESS,
 			    obs_data_get_double(source, S_RIM_SOFTNESS));
+	obs_data_set_double(
+		destination, S_RIM_LOCAL_EXPANSION,
+		obs_data_has_user_value(source, S_RIM_LOCAL_EXPANSION)
+			? obs_data_get_double(source, S_RIM_LOCAL_EXPANSION)
+			: 0.0);
 	obs_data_set_double(destination, S_RIM_SCALE,
 			    obs_data_get_double(source, S_RIM_SCALE));
 	obs_data_set_bool(
@@ -1081,6 +1099,7 @@ static bool reset_rim_clicked(obs_properties_t *props,
 			 RIM_POSITION_SCALED_DUPLICATE);
 	obs_data_set_double(settings, S_RIM_WIDTH, 25.0);
 	obs_data_set_double(settings, S_RIM_SOFTNESS, 0.75);
+	obs_data_set_double(settings, S_RIM_LOCAL_EXPANSION, 0.0);
 	obs_data_set_double(settings, S_RIM_SCALE, 0.935);
 	obs_data_set_bool(settings, S_RIM_AUTO_PIVOT, true);
 	obs_data_set_bool(settings, S_RIM_STABLE_TRACKING, false);
@@ -1388,6 +1407,10 @@ static obs_properties_t *dal_properties(void *data)
 					0.0, 50.0, 0.25);
 	obs_properties_add_float_slider(rim, S_RIM_SOFTNESS, obs_module_text("Rim.Softness"),
 					0.01, 1.0, 0.01);
+	obs_properties_add_float_slider(
+		rim, S_RIM_LOCAL_EXPANSION,
+		obs_module_text("Rim.LocalExpansion"), -100.0, 100.0,
+		0.25);
 	obs_properties_add_float_slider(rim, S_RIM_SCALE, obs_module_text("Rim.Scale"),
 					0.50, 1.50, 0.005);
 	obs_properties_add_bool(
@@ -1417,6 +1440,8 @@ static obs_properties_t *dal_properties(void *data)
 	set_tooltip(rim_position, "Rim.PositionMode.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_WIDTH), "Rim.Width.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_SOFTNESS), "Rim.Softness.Tooltip");
+	set_tooltip(obs_properties_get(rim, S_RIM_LOCAL_EXPANSION),
+		    "Rim.LocalExpansion.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_SCALE), "Rim.Scale.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_AUTO_PIVOT),
 		    "Rim.AutoPivot.Tooltip");
@@ -1819,6 +1844,8 @@ static void dal_render(void *data, gs_effect_t *unused)
 			  filter->rim_position_mode);
 	gs_effect_set_float(filter->p_rim_width, filter->rim_width);
 	gs_effect_set_float(filter->p_rim_softness, filter->rim_softness);
+	gs_effect_set_float(filter->p_rim_local_expansion,
+			    filter->rim_local_expansion);
 	gs_effect_set_float(filter->p_rim_scale, filter->rim_scale);
 	gs_effect_set_bool(filter->p_rim_auto_pivot,
 			   filter->rim_auto_pivot);

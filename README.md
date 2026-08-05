@@ -157,6 +157,7 @@ Local Silhouette is recommended when animated overlays or chat emotes share the 
 | Rim blend mode | Additive, Screen, Normal Mix, or Masked Duplicate compositing |
 | Rim width | Distance the rim extends inward from the alpha edge |
 | Rim softness | Transition between the rim and the unlit avatar |
+| Local silhouette expansion | Expands or contracts each local alpha edge in pixels without requiring a pivot |
 | Rim mask scale | Scale of the complete mask in Scaled Duplicate mode |
 | Follow avatar automatically | Recalculates the Scaled Duplicate pivot from the alpha silhouette |
 | Lock rim pivot against overlays | Uses the manual pivot so animated overlays cannot move it |

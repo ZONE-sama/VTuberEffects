@@ -27,6 +27,7 @@ uniform int rim_blend_mode;
 uniform int rim_position_mode;
 uniform float rim_width;
 uniform float rim_softness;
+uniform float rim_local_expansion;
 uniform float rim_scale;
 uniform bool rim_auto_pivot;
 uniform bool rim_stable_tracking;
@@ -387,6 +388,36 @@ float inner_rim(float2 uv, float center_alpha)
 		 * scaling performed inside the capture software automatically.
 		 */
 		float2 local_uv = uv + texel_size * rim_offset;
+		/*
+		 * Shift the sampled mask along its local alpha normal. This
+		 * expands or contracts each edge independently and therefore does
+		 * not require a canvas-space pivot.
+		 */
+		const int direction_samples = 16;
+		const float full_circle = 6.28318531;
+		float probe_radius = max(
+			2.0, rim_width + abs(rim_local_expansion));
+		float2 outward_direction = float2(0.0, 0.0);
+		for (int direction_index = 0;
+		     direction_index < direction_samples;
+		     direction_index++) {
+			float angle = full_circle *
+				      float(direction_index) /
+				      float(direction_samples);
+			float2 direction = float2(cos(angle), sin(angle));
+			float sample_alpha = image.Sample(
+				linear_clamp,
+				local_uv + direction * texel_size *
+						   probe_radius).a;
+			outward_direction += direction *
+					     (1.0 - sample_alpha);
+		}
+		float direction_length = length(outward_direction);
+		if (direction_length > 0.0001) {
+			outward_direction /= direction_length;
+			local_uv -= outward_direction * texel_size *
+				    rim_local_expansion;
+		}
 		float local_alpha_blur =
 			circular_blurred_alpha(local_uv, rim_width);
 		float local_raw_rim =
