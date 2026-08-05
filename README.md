@@ -202,6 +202,14 @@ The controls at the bottom of the filter can export the current effect settings 
 
 Presets include all effect controls but intentionally exclude environment source selections and Diagnostic View because those values depend on each user's OBS scene and source names.
 
+## Update notifications
+
+VTuber Effects can check its public GitHub releases for newer versions after OBS starts. The check runs at most once every 24 hours and does not send personal information, OBS settings, or usage data.
+
+When an update is available, the notification can open its release page, skip that specific version, postpone the reminder, or disable automatic checks. The **Check for updates** button beneath the plugin version performs a manual check even when automatic checks are disabled or a release was previously skipped.
+
+Beta installations are notified about newer beta, release-candidate, and stable versions. Stable installations ignore prereleases.
+
 ## Filter order
 
 OBS processes filters from top to bottom:
