@@ -1,5 +1,5 @@
 VTUBER EFFECTS FOR OBS
-Version 1.0.0-beta1
+Version 1.0.0-beta2
 
 
 OVERVIEW
@@ -207,6 +207,11 @@ this enabled when an avatar can move, resize, or occupy an off-center part of
 a full-frame capture. Rim scale and offsets will remain relative to the
 avatar instead of the center of the canvas.
 
+Stable avatar tracking
+Reduces unwanted rim movement caused by small detached overlays, including
+falling chat emotes. It favors the avatar's large continuous silhouette when
+calculating the automatic pivot. Leave this enabled for normal use.
+
 Manual rim pivot X and Y
 Sets the scale center as a percentage of the full frame when automatic
 following is disabled. These controls are intended as a fallback for unusual
@@ -229,6 +234,7 @@ Rim width: 25 pixels
 Rim softness: 0.75
 Rim mask scale: 0.935
 Follow avatar automatically: Enabled
+Stable avatar tracking: Enabled
 Horizontal offset: -25 pixels
 Vertical offset: -15 pixels
 
@@ -424,7 +430,7 @@ Lower that color entry's tolerance or softness.
 Raise its minimum saturation or minimum brightness.
 
 
-VERSION 1.0.0-beta1
+VERSION 1.0.0-beta2
 
 First public beta release. GitHub release tags use the same version shown by
 the plugin, beginning with 1.0.0-beta1 and incrementing the beta number until

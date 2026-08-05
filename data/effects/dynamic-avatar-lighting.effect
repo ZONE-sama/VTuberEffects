@@ -28,6 +28,7 @@ uniform float rim_width;
 uniform float rim_softness;
 uniform float rim_scale;
 uniform bool rim_auto_pivot;
+uniform bool rim_stable_tracking;
 uniform float2 rim_pivot;
 uniform float2 rim_offset;
 uniform bool keys_enabled;
@@ -365,6 +366,32 @@ float2 avatar_alpha_center()
 			 * antialiasing around the silhouette.
 			 */
 			float weight = alpha * alpha;
+
+			if (rim_stable_tracking) {
+				/*
+				 * Favor alpha that belongs to a broad, continuous
+				 * silhouette. Small detached overlays usually have
+				 * little neighboring alpha and therefore contribute
+				 * very little to the tracked center.
+				 */
+				float2 grid_step = 1.0 /
+					float2(float(columns), float(rows));
+				float support = alpha * 2.0;
+				support += image.Sample(
+					linear_clamp,
+					sample_uv + float2(grid_step.x, 0.0)).a;
+				support += image.Sample(
+					linear_clamp,
+					sample_uv - float2(grid_step.x, 0.0)).a;
+				support += image.Sample(
+					linear_clamp,
+					sample_uv + float2(0.0, grid_step.y)).a;
+				support += image.Sample(
+					linear_clamp,
+					sample_uv - float2(0.0, grid_step.y)).a;
+				support = saturate(support / 6.0);
+				weight *= support * support * support;
+			}
 			weighted_position += sample_uv * weight;
 			total_alpha += weight;
 		}
