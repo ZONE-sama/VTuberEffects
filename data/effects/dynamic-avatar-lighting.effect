@@ -316,6 +316,9 @@ float blurred_alpha(float2 center_uv, float blur_width)
 
 float circular_blurred_alpha(float2 center_uv, float blur_width)
 {
+	if (blur_width <= 0.01)
+		return image.Sample(linear_clamp, center_uv).a;
+
 	/*
 	 * A dense golden-angle disk avoids the square bands produced by a
 	 * small Cartesian sampling grid at large blur radii.
@@ -341,6 +344,38 @@ float circular_blurred_alpha(float2 center_uv, float blur_width)
 	}
 
 	return alpha_sum / max(total_weight, 0.000001);
+}
+
+float morphological_alpha(float2 center_uv, float radius)
+{
+	/*
+	 * Move the hard alpha boundary independently of blur. Negative values
+	 * erode (shrink) the silhouette; positive values dilate (expand) it.
+	 * A golden-angle disk gives the operation an approximately circular
+	 * footprint without the directional blocks of a square sampling grid.
+	 */
+	float center = image.Sample(linear_clamp, center_uv).a;
+	float distance_pixels = abs(radius);
+	if (distance_pixels <= 0.01)
+		return center;
+
+	const int sample_count = 64;
+	const float golden_angle = 2.39996323;
+	float result = center;
+
+	for (int i = 0; i < sample_count; i++) {
+		float normalized_radius =
+			sqrt((float(i) + 0.5) / float(sample_count));
+		float angle = float(i) * golden_angle;
+		float2 direction = float2(cos(angle), sin(angle));
+		float2 sample_uv = center_uv + direction * normalized_radius *
+				   distance_pixels * texel_size;
+		float alpha = image.Sample(linear_clamp, sample_uv).a;
+		result = radius < 0.0 ? min(result, alpha)
+				      : max(result, alpha);
+	}
+
+	return result;
 }
 
 float transformed_silhouette_alpha(float2 output_uv, float2 pivot,
@@ -443,18 +478,19 @@ float inner_rim(float2 uv, float center_alpha)
 		float local_alpha_blur =
 			circular_blurred_alpha(local_uv, rim_width);
 		/*
-		 * Remap only the soft alpha boundary. A power curve preserves
-		 * exact zero and one, so transparent pixels stay transparent and
-		 * the fully opaque interior can never turn into a full-frame rim.
-		 * Clamping the normalized adjustment also keeps extreme slider
-		 * values stable.
+		 * Apply a real morphological boundary transform rather than merely
+		 * reshaping soft alpha. This remains effective when rim_width is zero.
+		 * Combining by minimum for erosion and maximum for dilation preserves
+		 * the independently controlled blur while moving its inner boundary.
 		 */
-		float normalized_expansion = clamp(
-			rim_local_expansion / max(rim_width, 1.0),
-			-2.0, 2.0);
-		float boundary_exponent = exp(-normalized_expansion);
-		local_alpha_blur = pow(
-			saturate(local_alpha_blur), boundary_exponent);
+		float local_alpha_shape =
+			morphological_alpha(local_uv, rim_local_expansion);
+		if (rim_local_expansion < -0.01)
+			local_alpha_blur = min(local_alpha_blur,
+					     local_alpha_shape);
+		else if (rim_local_expansion > 0.01)
+			local_alpha_blur = max(local_alpha_blur,
+					     local_alpha_shape);
 		float local_raw_rim =
 			center_alpha * saturate(1.0 - local_alpha_blur);
 		float local_response =
