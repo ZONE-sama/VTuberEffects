@@ -215,7 +215,7 @@ private:
 
 		ReleaseInformation newest;
 		const QJsonArray releases = document.array();
-		for (const QJsonValue &value : releases) {
+		for (const QJsonValue value : releases) {
 			const QJsonObject object = value.toObject();
 			if (object.value(QStringLiteral("draft")).toBool())
 				continue;

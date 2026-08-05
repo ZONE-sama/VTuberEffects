@@ -1227,9 +1227,9 @@ static obs_properties_t *dal_properties(void *data)
 	obs_property_text_set_info_type(version, OBS_TEXT_INFO_NORMAL);
 	obs_property_text_set_info_word_wrap(version, false);
 	vtuber_effects_align_header_rows(version_text);
-	obs_property_t *check_updates = obs_properties_add_button(
+	obs_property_t *check_updates = obs_properties_add_button2(
 		props, "check_updates", obs_module_text("Update.Check"),
-		check_updates_clicked);
+		check_updates_clicked, data);
 	set_tooltip(check_updates, "Update.Check.Tooltip");
 
 	obs_property_t *environment = obs_properties_add_list(
