@@ -24,6 +24,7 @@ uniform float rim_color_amount;
 uniform float rim_layer_base;
 uniform float rim_darkness_cutoff;
 uniform int rim_blend_mode;
+uniform int rim_position_mode;
 uniform float rim_width;
 uniform float rim_softness;
 uniform float rim_scale;
@@ -366,32 +367,6 @@ float2 avatar_alpha_center()
 			 * antialiasing around the silhouette.
 			 */
 			float weight = alpha * alpha;
-
-			if (rim_stable_tracking) {
-				/*
-				 * Favor alpha that belongs to a broad, continuous
-				 * silhouette. Small detached overlays usually have
-				 * little neighboring alpha and therefore contribute
-				 * very little to the tracked center.
-				 */
-				float2 grid_step = 1.0 /
-					float2(float(columns), float(rows));
-				float support = alpha * 2.0;
-				support += image.Sample(
-					linear_clamp,
-					sample_uv + float2(grid_step.x, 0.0)).a;
-				support += image.Sample(
-					linear_clamp,
-					sample_uv - float2(grid_step.x, 0.0)).a;
-				support += image.Sample(
-					linear_clamp,
-					sample_uv + float2(0.0, grid_step.y)).a;
-				support += image.Sample(
-					linear_clamp,
-					sample_uv - float2(0.0, grid_step.y)).a;
-				support = saturate(support / 6.0);
-				weight *= support * support * support;
-			}
 			weighted_position += sample_uv * weight;
 			total_alpha += weight;
 		}
@@ -405,9 +380,31 @@ float2 avatar_alpha_center()
 
 float inner_rim(float2 uv, float center_alpha)
 {
+	if (rim_position_mode == 0) {
+		/*
+		 * Tracking-free local silhouette mode. The mask is derived
+		 * only from neighboring alpha, so it follows movement and
+		 * scaling performed inside the capture software automatically.
+		 */
+		float2 local_uv = uv + texel_size * rim_offset;
+		float local_alpha_blur =
+			circular_blurred_alpha(local_uv, rim_width);
+		float local_raw_rim =
+			center_alpha * saturate(1.0 - local_alpha_blur);
+		float local_response =
+			lerp(2.5, 0.55, saturate(rim_softness));
+		return pow(saturate(local_raw_rim), local_response);
+	}
+
 	float safe_scale = max(rim_scale, 0.001);
-	float2 pivot =
-		rim_auto_pivot ? avatar_alpha_center() : rim_pivot;
+	/*
+	 * Stable tracking deliberately uses the saved pivot. This is the
+	 * only deterministic option when overlays overlap the avatar and
+	 * become part of the same alpha silhouette.
+	 */
+	float2 pivot = rim_auto_pivot && !rim_stable_tracking
+			       ? avatar_alpha_center()
+			       : rim_pivot;
 	float2 center_uv =
 		(uv - pivot) / safe_scale + pivot;
 	center_uv += texel_size * rim_offset;

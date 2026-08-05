@@ -39,6 +39,7 @@
 #define S_RIM_LAYER_BASE "rim_layer_base"
 #define S_RIM_DARKNESS_CUTOFF "rim_darkness_cutoff"
 #define S_RIM_BLEND_MODE "rim_blend_mode"
+#define S_RIM_POSITION_MODE "rim_position_mode"
 #define S_RIM_WIDTH "rim_width"
 #define S_RIM_SOFTNESS "rim_softness"
 #define S_RIM_SCALE "rim_scale"
@@ -83,6 +84,11 @@ enum rim_blend_mode {
 	RIM_BLEND_SCREEN = 1,
 	RIM_BLEND_NORMAL = 2,
 	RIM_BLEND_MASKED_DUPLICATE = 3,
+};
+
+enum rim_position_mode {
+	RIM_POSITION_LOCAL_SILHOUETTE = 0,
+	RIM_POSITION_SCALED_DUPLICATE = 1,
 };
 
 enum glow_blend_mode {
@@ -142,6 +148,7 @@ struct dal_filter {
 	gs_eparam_t *p_rim_layer_base;
 	gs_eparam_t *p_rim_darkness_cutoff;
 	gs_eparam_t *p_rim_blend_mode;
+	gs_eparam_t *p_rim_position_mode;
 	gs_eparam_t *p_rim_width;
 	gs_eparam_t *p_rim_softness;
 	gs_eparam_t *p_rim_scale;
@@ -194,6 +201,7 @@ struct dal_filter {
 	float rim_layer_base;
 	float rim_darkness_cutoff;
 	int rim_blend_mode;
+	int rim_position_mode;
 	float rim_width;
 	float rim_softness;
 	float rim_scale;
@@ -319,6 +327,8 @@ static void load_effect(struct dal_filter *filter)
 					    "rim_darkness_cutoff");
 	filter->p_rim_blend_mode =
 		gs_effect_get_param_by_name(filter->effect, "rim_blend_mode");
+	filter->p_rim_position_mode = gs_effect_get_param_by_name(
+		filter->effect, "rim_position_mode");
 	filter->p_rim_width = gs_effect_get_param_by_name(filter->effect, "rim_width");
 	filter->p_rim_softness = gs_effect_get_param_by_name(filter->effect, "rim_softness");
 	filter->p_rim_scale = gs_effect_get_param_by_name(filter->effect, "rim_scale");
@@ -497,6 +507,8 @@ static void dal_update(void *data, obs_data_t *settings)
 	filter->rim_darkness_cutoff =
 		(float)obs_data_get_double(settings, S_RIM_DARKNESS_CUTOFF);
 	filter->rim_blend_mode = (int)obs_data_get_int(settings, S_RIM_BLEND_MODE);
+	filter->rim_position_mode =
+		(int)obs_data_get_int(settings, S_RIM_POSITION_MODE);
 	filter->rim_width = (float)obs_data_get_double(settings, S_RIM_WIDTH);
 	filter->rim_softness = (float)obs_data_get_double(settings, S_RIM_SOFTNESS);
 	filter->rim_scale = (float)obs_data_get_double(settings, S_RIM_SCALE);
@@ -609,11 +621,13 @@ static void dal_defaults(obs_data_t *settings)
 	obs_data_set_default_double(settings, S_RIM_DARKNESS_CUTOFF, 0.15);
 	obs_data_set_default_int(settings, S_RIM_BLEND_MODE,
 				 RIM_BLEND_MASKED_DUPLICATE);
+	obs_data_set_default_int(settings, S_RIM_POSITION_MODE,
+				 RIM_POSITION_SCALED_DUPLICATE);
 	obs_data_set_default_double(settings, S_RIM_WIDTH, 25.0);
 	obs_data_set_default_double(settings, S_RIM_SOFTNESS, 0.75);
 	obs_data_set_default_double(settings, S_RIM_SCALE, 0.935);
 	obs_data_set_default_bool(settings, S_RIM_AUTO_PIVOT, true);
-	obs_data_set_default_bool(settings, S_RIM_STABLE_TRACKING, true);
+	obs_data_set_default_bool(settings, S_RIM_STABLE_TRACKING, false);
 	obs_data_set_default_double(settings, S_RIM_PIVOT_X, 50.0);
 	obs_data_set_default_double(settings, S_RIM_PIVOT_Y, 50.0);
 	obs_data_set_default_double(settings, S_RIM_OFFSET_X, -25.0);
@@ -709,6 +723,30 @@ static bool environment_modified(obs_properties_t *props,
 	return true;
 }
 
+static bool rim_position_mode_modified(obs_properties_t *props,
+				       obs_property_t *property,
+				       obs_data_t *settings)
+{
+	UNUSED_PARAMETER(property);
+	const bool scaled = obs_data_get_int(settings, S_RIM_POSITION_MODE) ==
+			    RIM_POSITION_SCALED_DUPLICATE;
+	const char *scaled_controls[] = {
+		S_RIM_SCALE,       S_RIM_AUTO_PIVOT,
+		S_RIM_STABLE_TRACKING, S_RIM_PIVOT_X,
+		S_RIM_PIVOT_Y,
+	};
+
+	for (size_t i = 0;
+	     i < sizeof(scaled_controls) / sizeof(scaled_controls[0]); i++) {
+		obs_property_t *control =
+			obs_properties_get(props, scaled_controls[i]);
+		if (control)
+			obs_property_set_visible(control, scaled);
+	}
+
+	return true;
+}
+
 static void set_tooltip(obs_property_t *property, const char *text_key)
 {
 	if (property)
@@ -800,6 +838,11 @@ static void copy_effect_settings(obs_data_t *destination,
 			: 0.15);
 	obs_data_set_int(destination, S_RIM_BLEND_MODE,
 			 obs_data_get_int(source, S_RIM_BLEND_MODE));
+	obs_data_set_int(
+		destination, S_RIM_POSITION_MODE,
+		obs_data_has_user_value(source, S_RIM_POSITION_MODE)
+			? obs_data_get_int(source, S_RIM_POSITION_MODE)
+			: RIM_POSITION_SCALED_DUPLICATE);
 	obs_data_set_double(destination, S_RIM_WIDTH,
 			    obs_data_get_double(source, S_RIM_WIDTH));
 	obs_data_set_double(destination, S_RIM_SOFTNESS,
@@ -815,7 +858,7 @@ static void copy_effect_settings(obs_data_t *destination,
 		destination, S_RIM_STABLE_TRACKING,
 		obs_data_has_user_value(source, S_RIM_STABLE_TRACKING)
 			? obs_data_get_bool(source, S_RIM_STABLE_TRACKING)
-			: true);
+			: false);
 	obs_data_set_double(destination, S_RIM_PIVOT_X,
 			    obs_data_has_user_value(source, S_RIM_PIVOT_X)
 				    ? obs_data_get_double(source,
@@ -1034,11 +1077,13 @@ static bool reset_rim_clicked(obs_properties_t *props,
 	obs_data_set_double(settings, S_RIM_DARKNESS_CUTOFF, 0.15);
 	obs_data_set_int(settings, S_RIM_BLEND_MODE,
 			 RIM_BLEND_MASKED_DUPLICATE);
+	obs_data_set_int(settings, S_RIM_POSITION_MODE,
+			 RIM_POSITION_SCALED_DUPLICATE);
 	obs_data_set_double(settings, S_RIM_WIDTH, 25.0);
 	obs_data_set_double(settings, S_RIM_SOFTNESS, 0.75);
 	obs_data_set_double(settings, S_RIM_SCALE, 0.935);
 	obs_data_set_bool(settings, S_RIM_AUTO_PIVOT, true);
-	obs_data_set_bool(settings, S_RIM_STABLE_TRACKING, true);
+	obs_data_set_bool(settings, S_RIM_STABLE_TRACKING, false);
 	obs_data_set_double(settings, S_RIM_PIVOT_X, 50.0);
 	obs_data_set_double(settings, S_RIM_PIVOT_Y, 50.0);
 	obs_data_set_double(settings, S_RIM_OFFSET_X, -25.0);
@@ -1325,6 +1370,20 @@ static obs_properties_t *dal_properties(void *data)
 	obs_property_list_add_int(
 		rim_blend, obs_module_text("Rim.Blend.MaskedDuplicate"),
 		RIM_BLEND_MASKED_DUPLICATE);
+	obs_property_t *rim_position = obs_properties_add_list(
+		rim, S_RIM_POSITION_MODE,
+		obs_module_text("Rim.PositionMode"), OBS_COMBO_TYPE_LIST,
+		OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(
+		rim_position,
+		obs_module_text("Rim.Position.LocalSilhouette"),
+		RIM_POSITION_LOCAL_SILHOUETTE);
+	obs_property_list_add_int(
+		rim_position,
+		obs_module_text("Rim.Position.ScaledDuplicate"),
+		RIM_POSITION_SCALED_DUPLICATE);
+	obs_property_set_modified_callback(rim_position,
+					   rim_position_mode_modified);
 	obs_properties_add_float_slider(rim, S_RIM_WIDTH, obs_module_text("Rim.Width"),
 					0.0, 50.0, 0.25);
 	obs_properties_add_float_slider(rim, S_RIM_SOFTNESS, obs_module_text("Rim.Softness"),
@@ -1355,6 +1414,7 @@ static obs_properties_t *dal_properties(void *data)
 	set_tooltip(obs_properties_get(rim, S_RIM_DARKNESS_CUTOFF),
 		    "Rim.DarknessCutoff.Tooltip");
 	set_tooltip(rim_blend, "Rim.BlendMode.Tooltip");
+	set_tooltip(rim_position, "Rim.PositionMode.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_WIDTH), "Rim.Width.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_SOFTNESS), "Rim.Softness.Tooltip");
 	set_tooltip(obs_properties_get(rim, S_RIM_SCALE), "Rim.Scale.Tooltip");
@@ -1755,6 +1815,8 @@ static void dal_render(void *data, gs_effect_t *unused)
 	gs_effect_set_float(filter->p_rim_darkness_cutoff,
 			    filter->rim_darkness_cutoff);
 	gs_effect_set_int(filter->p_rim_blend_mode, filter->rim_blend_mode);
+	gs_effect_set_int(filter->p_rim_position_mode,
+			  filter->rim_position_mode);
 	gs_effect_set_float(filter->p_rim_width, filter->rim_width);
 	gs_effect_set_float(filter->p_rim_softness, filter->rim_softness);
 	gs_effect_set_float(filter->p_rim_scale, filter->rim_scale);

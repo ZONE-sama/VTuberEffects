@@ -192,6 +192,17 @@ Normal Mix blends directly toward the rim color.
 Masked Duplicate reveals an environment-lit duplicate through the rim mask.
 This most closely resembles a traditional duplicated-source workflow.
 
+Rim positioning mode
+
+Local Silhouette creates the rim from neighboring alpha pixels without
+tracking or scaling the complete frame. It follows movement and scaling made
+inside VTuber software automatically. Detached overlays may receive their own
+rim, but they cannot move the avatar's rim.
+
+Scaled Duplicate transforms the complete alpha mask around an automatic or
+manual pivot. This retains the original pivot-based appearance and supports
+Rim Mask Scale.
+
 Rim width
 Controls how far the rim extends inward from the avatar's edge.
 
@@ -207,10 +218,12 @@ this enabled when an avatar can move, resize, or occupy an off-center part of
 a full-frame capture. Rim scale and offsets will remain relative to the
 avatar instead of the center of the canvas.
 
-Stable avatar tracking
-Reduces unwanted rim movement caused by small detached overlays, including
-falling chat emotes. It favors the avatar's large continuous silhouette when
-calculating the automatic pivot. Leave this enabled for normal use.
+Lock rim pivot against overlays
+Uses the saved manual X and Y pivot instead of recalculating the center from
+the alpha silhouette. Enable this when falling chat emotes or other overlays
+make automatic following jitter. Set the manual pivot to the avatar's normal
+on-screen center. Because the pivot is fixed, it will not follow an avatar
+that moves to a different part of the frame.
 
 Manual rim pivot X and Y
 Sets the scale center as a percentage of the full frame when automatic
@@ -230,11 +243,12 @@ Rim brightness: 0.50
 Rim environment color amount: 2.00
 Rim layer base brightness: 1.00
 Blend mode: Masked Duplicate
+Positioning mode: Scaled Duplicate
 Rim width: 25 pixels
 Rim softness: 0.75
 Rim mask scale: 0.935
 Follow avatar automatically: Enabled
-Stable avatar tracking: Enabled
+Lock rim pivot against overlays: Disabled
 Horizontal offset: -25 pixels
 Vertical offset: -15 pixels
 
