@@ -1,6 +1,7 @@
 #include "update-checker.h"
 
 #include <obs-module.h>
+#include <plugin-support.h>
 
 #include <QApplication>
 #include <QCheckBox>
@@ -213,7 +214,8 @@ private:
 		}
 
 		ReleaseInformation newest;
-		for (const QJsonValue &value : document.array()) {
+		const QJsonArray releases = document.array();
+		for (const QJsonValue &value : releases) {
 			const QJsonObject object = value.toObject();
 			if (object.value(QStringLiteral("draft")).toBool())
 				continue;
