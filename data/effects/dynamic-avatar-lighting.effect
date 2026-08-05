@@ -343,6 +343,58 @@ float circular_blurred_alpha(float2 center_uv, float blur_width)
 	return alpha_sum / max(total_weight, 0.000001);
 }
 
+float transformed_silhouette_alpha(float2 output_uv, float2 pivot,
+				   float scale, float2 offset)
+{
+	/*
+	 * Transform the complete silhouette around its pivot. Returning zero
+	 * outside the source prevents clamp sampling from stretching an opaque
+	 * edge across the frame.
+	 */
+	float safe_scale = max(scale, 0.001);
+	float2 sample_uv = (output_uv - pivot) / safe_scale + pivot;
+	sample_uv += texel_size * offset;
+	if (sample_uv.x < 0.0 || sample_uv.x > 1.0 ||
+	    sample_uv.y < 0.0 || sample_uv.y > 1.0)
+		return 0.0;
+
+	return image.Sample(linear_clamp, sample_uv).a;
+}
+
+float circular_blurred_transformed_alpha(float2 center_uv, float blur_width,
+					 float2 pivot, float scale,
+					 float2 offset)
+{
+	/*
+	 * Blur in output space after transforming the silhouette. Applying the
+	 * transform independently to every tap keeps mask scale and blur softness
+	 * independent: scale changes the silhouette size, while blur_width changes
+	 * only the feather around that scaled silhouette.
+	 */
+	const int sample_count = 128;
+	const float golden_angle = 2.39996323;
+	float alpha_sum =
+		transformed_silhouette_alpha(center_uv, pivot, scale, offset);
+	float total_weight = 1.0;
+
+	for (int i = 0; i < sample_count; i++) {
+		float normalized_radius =
+			sqrt((float(i) + 0.5) / float(sample_count));
+		float angle = float(i) * golden_angle;
+		float2 direction = float2(cos(angle), sin(angle));
+		float weight =
+			exp(-3.0 * normalized_radius * normalized_radius);
+		float2 output_uv =
+			center_uv + direction * normalized_radius *
+			blur_width * texel_size;
+		alpha_sum += transformed_silhouette_alpha(
+			output_uv, pivot, scale, offset) * weight;
+		total_weight += weight;
+	}
+
+	return alpha_sum / max(total_weight, 0.000001);
+}
+
 float2 avatar_alpha_center()
 {
 	/*
@@ -410,7 +462,6 @@ float inner_rim(float2 uv, float center_alpha)
 		return pow(saturate(local_raw_rim), local_response);
 	}
 
-	float safe_scale = max(rim_scale, 0.001);
 	/*
 	 * Stable tracking deliberately uses the saved pivot. This is the
 	 * only deterministic option when overlays overlap the avatar and
@@ -419,11 +470,8 @@ float inner_rim(float2 uv, float center_alpha)
 	float2 pivot = rim_auto_pivot && !rim_stable_tracking
 			       ? avatar_alpha_center()
 			       : rim_pivot;
-	float2 center_uv =
-		(uv - pivot) / safe_scale + pivot;
-	center_uv += texel_size * rim_offset;
-	float alpha_blur =
-		circular_blurred_alpha(center_uv, rim_width);
+	float alpha_blur = circular_blurred_transformed_alpha(
+		uv, rim_width, pivot, rim_scale, rim_offset);
 	float raw_rim = center_alpha * saturate(1.0 - alpha_blur);
 	float response = lerp(2.5, 0.55, saturate(rim_softness));
 	return pow(saturate(raw_rim), response);
