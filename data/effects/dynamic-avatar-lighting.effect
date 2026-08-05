@@ -391,15 +391,18 @@ float inner_rim(float2 uv, float center_alpha)
 		float local_alpha_blur =
 			circular_blurred_alpha(local_uv, rim_width);
 		/*
-		 * Treat the blurred alpha as a smooth edge-distance field and
-		 * shift its boundary uniformly. Unlike per-pixel direction
-		 * displacement, this cannot bend or separate silhouette parts.
+		 * Remap only the soft alpha boundary. A power curve preserves
+		 * exact zero and one, so transparent pixels stay transparent and
+		 * the fully opaque interior can never turn into a full-frame rim.
+		 * Clamping the normalized adjustment also keeps extreme slider
+		 * values stable.
 		 */
-		float expansion_scale =
-			0.5 / max(rim_width, 1.0);
-		local_alpha_blur = saturate(
-			local_alpha_blur +
-			rim_local_expansion * expansion_scale);
+		float normalized_expansion = clamp(
+			rim_local_expansion / max(rim_width, 1.0),
+			-2.0, 2.0);
+		float boundary_exponent = exp(-normalized_expansion);
+		local_alpha_blur = pow(
+			saturate(local_alpha_blur), boundary_exponent);
 		float local_raw_rim =
 			center_alpha * saturate(1.0 - local_alpha_blur);
 		float local_response =
